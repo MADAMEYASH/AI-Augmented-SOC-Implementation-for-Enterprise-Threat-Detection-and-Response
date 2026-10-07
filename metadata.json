@@ -1,0 +1,6 @@
+{
+  "name": "AegisSOC - AI-Augmented Enterprise Security Operations Center",
+  "description": "Next-generation mini Security Operations Center integrating AI threat detection (LogAI & Alkido), Splunk/Elastic SIEM log ingestion, Sophos XDR/EDR endpoint defense, Shuffle SOAR automated playbooks, IOC pivoting, and MITRE ATT&CK & D3FEND mapping.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
