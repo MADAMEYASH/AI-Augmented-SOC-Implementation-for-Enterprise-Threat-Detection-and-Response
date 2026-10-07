@@ -94,6 +94,36 @@ export default function App() {
   const [huntingPivotTerm, setHuntingPivotTerm] = useState<string>('185.220.101.5');
   const [bannerNotice, setBannerNotice] = useState<string | null>(null);
 
+  // Dark & Light Theme State
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('aegis_theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    return 'dark';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('light');
+    } else {
+      root.classList.remove('dark');
+      root.classList.add('light');
+    }
+    try {
+      localStorage.setItem('aegis_theme', theme);
+    } catch {
+      // storage unavailable
+    }
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   // Simulated live EPS fluctuation & periodic benign log arrival
   useEffect(() => {
     if (!isStreaming) return;
@@ -286,7 +316,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       {/* Top SOC Command Header */}
       <Header
         activeTab={activeTab}
@@ -297,6 +327,8 @@ export default function App() {
         setIsStreaming={setIsStreaming}
         soundEnabled={soundEnabled}
         setSoundEnabled={setSoundEnabled}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
         onOpenInjectScenario={() => setShowInjectScenarioModal(true)}
         onResetSoc={handleResetSoc}
         onQuickHunt={() => setActiveTab('threat-hunting')}
@@ -304,12 +336,12 @@ export default function App() {
 
       {/* Real-time Notification Banner */}
       {bannerNotice && (
-        <div className="bg-gradient-to-r from-cyan-950 via-slate-900 to-cyan-950 border-b border-cyan-700/60 py-2 px-4 text-center font-mono text-xs text-cyan-200 flex items-center justify-center gap-2 shadow-lg animate-fade-in">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+        <div className="bg-gradient-to-r from-cyan-100 via-white to-cyan-100 dark:from-cyan-950 dark:via-slate-900 dark:to-cyan-950 border-b border-cyan-300 dark:border-cyan-700/60 py-2 px-4 text-center font-mono text-xs text-cyan-900 dark:text-cyan-200 flex items-center justify-center gap-2 shadow-sm dark:shadow-lg transition-colors">
+          <span className="w-2 h-2 rounded-full bg-cyan-600 dark:bg-cyan-400 animate-ping" />
           <span>{bannerNotice}</span>
           <button
             onClick={() => setBannerNotice(null)}
-            className="text-slate-400 hover:text-slate-200 ml-3 text-xs"
+            className="text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 ml-3 text-xs"
           >
             ✕
           </button>
@@ -403,12 +435,12 @@ export default function App() {
       />
 
       {/* Cyber SOC Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 py-3 px-6 text-center text-xs font-mono text-slate-500 flex flex-wrap items-center justify-between gap-2">
+      <footer className="border-t border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-950 py-3 px-6 text-center text-xs font-mono text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2 transition-colors">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span>AEGIS MINI-SOC DEFENSE SYSTEM • SPLUNK • ELASTIC • LOGAI • ALKIDO • SOPHOS XDR • SHUFFLE SOAR</span>
         </div>
-        <div className="text-[11px] text-slate-400">
+        <div className="text-[11px] text-slate-400 dark:text-slate-500">
           Framework Coverage: MITRE ATT&amp;CK Enterprise v14 &amp; MITRE D3FEND
         </div>
       </footer>

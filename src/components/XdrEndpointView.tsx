@@ -244,15 +244,15 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
   return (
     <div className="space-y-4 font-mono">
       {/* Fleet Overview Strip */}
-      <div className="p-4 rounded-lg bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+      <div className="p-4 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3 transition-colors">
         <div>
           <div className="flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-sm font-bold text-slate-100">
+            <ShieldAlert className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               SOPHOS INTERCEPT X & EDR DEFENSE CONSOLE
             </h2>
           </div>
-          <p className="text-[10px] text-slate-400 mt-0.5">
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
             Active Endpoint Telemetry, Live Process Tree Inspection, CryptoGuard Ransomware Mitigation, and Network Containment
           </p>
         </div>
@@ -260,7 +260,7 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowShellModal(true)}
-            className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+            className="px-3 py-1.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-cyan-800 dark:text-cyan-300 border border-slate-300 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
           >
             <Terminal className="w-3.5 h-3.5" />
             <span>Open Forensic Live Shell</span>
@@ -271,12 +271,12 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
       {/* Grid: Host Fleet Inventory & Selected Host Deep Dive */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Left: Endpoint Fleet List (1 Col) */}
-        <div className="p-4 rounded-lg bg-slate-900/90 border border-slate-800 space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-            <span className="text-xs font-bold text-slate-200">
+        <div className="p-4 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 transition-colors">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+            <span className="text-xs font-bold text-slate-900 dark:text-slate-200">
               ENTERPRISE ENDPOINTS ({endpoints.length})
             </span>
-            <span className="text-[10px] text-slate-400">Agent Heartbeat Live</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">Agent Heartbeat Live</span>
           </div>
 
           <div className="space-y-2">
@@ -291,36 +291,36 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
                   onClick={() => setSelectedHost(host)}
                   className={`p-3 rounded border cursor-pointer transition space-y-1.5 ${
                     isSelected
-                      ? 'bg-cyan-950/40 border-cyan-400 ring-1 ring-cyan-400/40'
+                      ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-500 dark:border-cyan-400 ring-1 ring-cyan-500 dark:ring-cyan-400/40'
                       : isCompromised
-                      ? 'bg-red-950/20 border-red-800/60 hover:bg-red-950/30'
-                      : 'bg-slate-950 border-slate-850 hover:bg-slate-900'
+                      ? 'bg-red-50 dark:bg-red-950/20 border-red-300 dark:border-red-800/60 hover:bg-red-100 dark:hover:bg-red-950/30'
+                      : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-850 hover:bg-slate-100 dark:hover:bg-slate-900'
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="font-bold text-xs text-slate-200 flex items-center gap-1.5">
-                        <Server className="w-3.5 h-3.5 text-cyan-400" />
+                      <div className="font-bold text-xs text-slate-900 dark:text-slate-200 flex items-center gap-1.5">
+                        <Server className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                         <span>{host.hostname}</span>
                       </div>
-                      <div className="text-[10px] text-slate-400">{host.ip} • {host.os}</div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">{host.ip} • {host.os}</div>
                     </div>
                     <span
                       className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
                         isIsolated
-                          ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                          ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                           : isCompromised
-                          ? 'bg-red-950 text-red-300 border border-red-800 animate-pulse'
-                          : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                          ? 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800 animate-pulse'
+                          : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                       }`}
                     >
                       {host.status}
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-900">
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-200 dark:border-slate-900">
                     <span>Risk: {host.riskScore}/100</span>
-                    <span className="text-red-400 font-semibold">{host.activeAlertsCount} Alerts</span>
+                    <span className="text-red-600 dark:text-red-400 font-semibold">{host.activeAlertsCount} Alerts</span>
                   </div>
                 </div>
               );
@@ -329,26 +329,26 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
         </div>
 
         {/* Right: Selected Host Details & Process Execution Hierarchy (2 Cols) */}
-        <div className="lg:col-span-2 p-4 rounded-lg bg-slate-900/90 border border-slate-800 space-y-4">
+        <div className="lg:col-span-2 p-4 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 transition-colors">
           {/* Host Banner & Actions */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-slate-100">{selectedHost.hostname}</h3>
-                <span className="text-xs text-slate-400 font-mono">({selectedHost.ip})</span>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{selectedHost.hostname}</h3>
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">({selectedHost.ip})</span>
                 <span
                   className={`text-xs px-2 py-0.2 rounded font-bold uppercase ${
                     selectedHost.status === 'isolated'
-                      ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                      ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                       : selectedHost.status === 'compromised'
-                      ? 'bg-red-950 text-red-300 border border-red-800'
-                      : 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                      ? 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800'
+                      : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                   }`}
                 >
                   {selectedHost.status}
                 </span>
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                 OS: {selectedHost.os} | Agent: {selectedHost.agentVersion} | User: {selectedHost.user}
               </div>
             </div>
@@ -359,7 +359,7 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
                 onClick={() => onToggleIsolation(selectedHost.hostname)}
                 className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
                   selectedHost.status === 'isolated'
-                    ? 'bg-emerald-900 hover:bg-emerald-800 text-emerald-100'
+                    ? 'bg-emerald-700 hover:bg-emerald-600 text-white'
                     : 'bg-red-700 hover:bg-red-600 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]'
                 }`}
               >
@@ -381,13 +381,13 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
           {/* Process Tree Inspection */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-200">
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-200">
                 BEHAVIORAL PROCESS EXECUTION TREE (LOLBins & Injections)
               </span>
-              <span className="text-[10px] text-slate-400">Parent-Child Lineage Analysis</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400">Parent-Child Lineage Analysis</span>
             </div>
 
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-850 space-y-2 max-h-[460px] overflow-y-auto scrollbar-thin">
+            <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 space-y-2 max-h-[460px] overflow-y-auto scrollbar-thin transition-colors">
               {processes.map((proc) => renderProcessNode(proc))}
             </div>
           </div>

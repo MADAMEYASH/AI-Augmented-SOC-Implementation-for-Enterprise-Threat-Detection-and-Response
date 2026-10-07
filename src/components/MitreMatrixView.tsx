@@ -74,27 +74,27 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
   return (
     <div className="space-y-4 font-mono">
       {/* Top Navigation & Coverage Metrics */}
-      <div className="p-4 rounded-lg bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+      <div className="p-4 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-4 transition-colors">
         <div>
           <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-sm font-bold text-slate-100">
+            <Shield className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               MITRE ATT&amp;CK® &amp; D3FEND™ COVERAGE &amp; GAP ANALYSIS
             </h2>
           </div>
-          <p className="text-[10px] text-slate-400 mt-0.5">
+          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
             Enterprise ATT&amp;CK v14 Tactical Heatmap • NSA/MITRE D3FEND Countermeasures • Automated Defense Gap Remediation
           </p>
         </div>
 
         {/* Tab Selector */}
-        <div className="flex rounded border border-slate-700 bg-slate-950 p-0.5 text-xs">
+        <div className="flex rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-950 p-0.5 text-xs">
           <button
             onClick={() => setActiveTab('attack')}
             className={`px-3 py-1.5 rounded transition cursor-pointer ${
               activeTab === 'attack'
                 ? 'bg-cyan-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             ATT&amp;CK Matrix
@@ -104,7 +104,7 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
             className={`px-3 py-1.5 rounded transition cursor-pointer ${
               activeTab === 'd3fend'
                 ? 'bg-cyan-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             D3FEND Countermeasures
@@ -114,7 +114,7 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
             className={`px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1 ${
               activeTab === 'gap'
                 ? 'bg-cyan-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             <span>Gap Analysis</span>
@@ -127,51 +127,51 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
 
       {/* Coverage Status Banner */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
-          <div className="text-[10px] text-slate-400">DEFENSIVE COVERAGE SCORE</div>
-          <div className="text-xl font-bold text-cyan-300">{coveragePct}%</div>
-          <div className="w-full bg-slate-800 h-1.5 rounded mt-1.5 overflow-hidden">
-            <div className="bg-cyan-400 h-full transition-all" style={{ width: `${coveragePct}%` }} />
+        <div className="p-3 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">DEFENSIVE COVERAGE SCORE</div>
+          <div className="text-xl font-bold text-cyan-700 dark:text-cyan-300">{coveragePct}%</div>
+          <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded mt-1.5 overflow-hidden">
+            <div className="bg-cyan-500 dark:bg-cyan-400 h-full transition-all" style={{ width: `${coveragePct}%` }} />
           </div>
         </div>
 
-        <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
-          <div className="text-[10px] text-slate-400">ACTIVE DETECTIONS</div>
-          <div className="text-xl font-bold text-red-400">
+        <div className="p-3 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">ACTIVE DETECTIONS</div>
+          <div className="text-xl font-bold text-red-600 dark:text-red-400">
             {techniques.filter((t) => t.detectedCount > 0).length} Techniques
           </div>
-          <div className="text-[10px] text-slate-500">Observed in ingested logs</div>
+          <div className="text-[10px] text-slate-400 dark:text-slate-500">Observed in ingested logs</div>
         </div>
 
-        <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
-          <div className="text-[10px] text-slate-400">RULE ENFORCEMENT</div>
-          <div className="text-xl font-bold text-emerald-400">
+        <div className="p-3 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">RULE ENFORCEMENT</div>
+          <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
             {coveredCount} of {totalCount}
           </div>
-          <div className="text-[10px] text-slate-500">Sigma &amp; Sophos policies active</div>
+          <div className="text-[10px] text-slate-400 dark:text-slate-500">Sigma &amp; Sophos policies active</div>
         </div>
 
-        <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
-          <div className="text-[10px] text-slate-400">CRITICAL DEFENSE GAPS</div>
-          <div className="text-xl font-bold text-amber-400">
+        <div className="p-3 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">CRITICAL DEFENSE GAPS</div>
+          <div className="text-xl font-bold text-amber-600 dark:text-amber-400">
             {activeThreatGaps.length} Unprotected
           </div>
-          <div className="text-[10px] text-slate-500">Immediate countermeasure required</div>
+          <div className="text-[10px] text-slate-400 dark:text-slate-500">Immediate countermeasure required</div>
         </div>
       </div>
 
       {/* Tab 1: ATT&CK Matrix View */}
       {activeTab === 'attack' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-lg bg-slate-900/90 border border-slate-800 overflow-x-auto scrollbar-thin">
+          <div className="p-4 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm overflow-x-auto scrollbar-thin transition-colors">
             <div className="flex gap-2.5 min-w-[1300px] pb-2">
               {tactics.map((tactic) => {
                 const list = groupedByTactic[tactic] || [];
 
                 return (
                   <div key={tactic} className="flex-1 min-w-[140px] space-y-2">
-                    <div className="p-2 rounded bg-slate-950 border border-slate-800 text-center">
-                      <div className="text-[11px] font-bold text-cyan-300 truncate">{tactic}</div>
+                    <div className="p-2 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-center">
+                      <div className="text-[11px] font-bold text-cyan-800 dark:text-cyan-300 truncate">{tactic}</div>
                       <div className="text-[9px] text-slate-500">{list.length} Techniques</div>
                     </div>
 
@@ -188,32 +188,32 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
                             onClick={() => setSelectedTechnique(tech)}
                             className={`p-2 rounded border cursor-pointer text-left transition ${
                               isSelected
-                                ? 'ring-2 ring-cyan-400 border-cyan-400'
+                                ? 'ring-2 ring-cyan-500 dark:ring-cyan-400 border-cyan-500 dark:border-cyan-400'
                                 : ''
                             } ${
                               isUncovered
-                                ? 'bg-red-950/40 border-red-800/80 hover:bg-red-900/40'
+                                ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800/80 hover:bg-red-100 dark:hover:bg-red-900/40'
                                 : hasActiveDetections
-                                ? 'bg-amber-950/40 border-amber-800/80 hover:bg-amber-900/40'
-                                : 'bg-slate-950/80 border-slate-800 hover:bg-slate-800'
+                                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800/80 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                                : 'bg-slate-50 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
                             }`}
                           >
                             <div className="flex items-center justify-between text-[10px]">
-                              <span className="font-bold text-slate-400">{tech.id}</span>
+                              <span className="font-bold text-slate-500 dark:text-slate-400">{tech.id}</span>
                               {tech.detectedCount > 0 && (
-                                <span className="px-1 rounded bg-red-900 text-red-200 font-bold text-[9px]">
+                                <span className="px-1 rounded bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 font-bold text-[9px]">
                                   {tech.detectedCount}x
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] font-semibold text-slate-200 mt-1 line-clamp-2">
+                            <div className="text-[11px] font-semibold text-slate-900 dark:text-slate-200 mt-1 line-clamp-2">
                               {tech.name}
                             </div>
                             <div className="mt-1 text-[9px] flex items-center justify-between">
-                              <span className={isUncovered ? 'text-red-400 font-bold' : 'text-emerald-400'}>
+                              <span className={isUncovered ? 'text-red-600 dark:text-red-400 font-bold' : 'text-emerald-600 dark:text-emerald-400'}>
                                 {isUncovered ? 'GAP' : 'COVERED'}
                               </span>
-                              <span className="text-slate-500">{tech.d3fendCategory}</span>
+                              <span className="text-slate-400 dark:text-slate-500">{tech.d3fendCategory}</span>
                             </div>
                           </div>
                         );

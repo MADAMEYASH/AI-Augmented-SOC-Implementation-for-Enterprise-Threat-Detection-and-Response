@@ -41,22 +41,22 @@ export const InjectScenarioModal: React.FC<InjectScenarioModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono">
-      <div className="bg-slate-900 border border-slate-700 rounded-lg max-w-3xl w-full p-5 space-y-4 shadow-2xl text-xs max-h-[90vh] overflow-y-auto scrollbar-thin">
+    <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono transition-colors">
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg max-w-3xl w-full p-5 space-y-4 shadow-2xl text-xs max-h-[90vh] overflow-y-auto scrollbar-thin text-slate-900 dark:text-slate-100 transition-colors">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-red-500 animate-pulse" />
-            <h3 className="font-bold text-slate-100 text-sm">
+            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
               REAL-WORLD ENTERPRISE ATTACK SCENARIO SIMULATOR
             </h3>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
             ✕
           </button>
         </div>
 
-        <p className="text-slate-400 text-xs">
+        <p className="text-slate-600 dark:text-slate-400 text-xs">
           Select a realistic enterprise cyber intrusion scenario to simulate. Injecting will flood the SIEM with multi-stage telemetry, trigger LogAI &amp; Alkido anomaly detection, alert Sophos XDR, and light up the MITRE ATT&amp;CK matrix.
         </p>
 
@@ -71,34 +71,34 @@ export const InjectScenarioModal: React.FC<InjectScenarioModalProps> = ({
                 onClick={() => setSelectedScenario(sc)}
                 className={`p-3 rounded-lg border cursor-pointer transition space-y-2 ${
                   isSelected
-                    ? 'bg-red-950/40 border-red-500 ring-1 ring-red-500'
-                    : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    ? 'bg-red-50 dark:bg-red-950/40 border-red-500 ring-1 ring-red-500'
+                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] px-1.5 py-0.2 rounded font-bold uppercase bg-red-950 text-red-300 border border-red-800">
+                  <span className="text-[10px] px-1.5 py-0.2 rounded font-bold uppercase bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800">
                     {sc.severity}
                   </span>
                   <Flame className="w-4 h-4 text-red-500" />
                 </div>
-                <div className="font-bold text-xs text-slate-200">{sc.name}</div>
-                <div className="text-[10px] text-slate-400">Actor: {sc.adversary}</div>
+                <div className="font-bold text-xs text-slate-900 dark:text-slate-200">{sc.name}</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-400">Actor: {sc.adversary}</div>
               </div>
             );
           })}
         </div>
 
         {/* Selected Scenario Kill Chain Breakdown */}
-        <div className="p-4 rounded-lg bg-slate-950 border border-slate-850 space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-900 pb-2">
+        <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 space-y-3 transition-colors">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-2">
             <div>
-              <span className="font-bold text-slate-100 text-xs">{selectedScenario.name}</span>
-              <p className="text-[11px] text-slate-400 mt-0.5">{selectedScenario.description}</p>
+              <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">{selectedScenario.name}</span>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">{selectedScenario.description}</p>
             </div>
           </div>
 
           <div className="space-y-2">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               SIMULATED KILL CHAIN STAGES:
             </span>
 
@@ -106,20 +106,20 @@ export const InjectScenarioModal: React.FC<InjectScenarioModalProps> = ({
               {selectedScenario.attackChainSteps.map((step, idx) => (
                 <div
                   key={idx}
-                  className="p-2.5 rounded bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2"
+                  className="p-2.5 rounded bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 transition-colors"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-slate-800 text-cyan-300 flex items-center justify-center font-bold text-[10px]">
+                    <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-cyan-800 dark:text-cyan-300 flex items-center justify-center font-bold text-[10px]">
                       {idx + 1}
                     </span>
                     <div>
-                      <div className="text-xs font-semibold text-slate-200">
-                        {step.stage} • <span className="text-cyan-400">{step.technique}</span>
+                      <div className="text-xs font-semibold text-slate-900 dark:text-slate-200">
+                        {step.stage} • <span className="text-cyan-700 dark:text-cyan-400">{step.technique}</span>
                       </div>
-                      <div className="text-[11px] text-slate-400">{step.action}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{step.action}</div>
                     </div>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 whitespace-nowrap">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 whitespace-nowrap">
                     {step.detectionSource}
                   </span>
                 </div>
@@ -129,10 +129,10 @@ export const InjectScenarioModal: React.FC<InjectScenarioModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+        <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
           <button
             onClick={onClose}
-            className="px-3 py-1.5 rounded border border-slate-700 text-slate-400 hover:text-slate-200"
+            className="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
           >
             Cancel
           </button>

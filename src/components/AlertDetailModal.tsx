@@ -66,31 +66,31 @@ export const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono">
-      <div className="bg-slate-900 border border-slate-700 rounded-lg max-w-4xl w-full p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-thin text-xs">
+    <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 font-mono transition-colors">
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg max-w-4xl w-full p-5 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-thin text-xs text-slate-900 dark:text-slate-100 transition-colors">
         {/* Header Bar */}
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span
                 className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase ${
                   alert.severity === 'critical'
-                    ? 'bg-red-950 text-red-300 border border-red-800'
-                    : 'bg-amber-950 text-amber-300 border border-amber-800'
+                    ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800'
+                    : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
                 }`}
               >
                 {alert.severity} SEVERITY
               </span>
-              <span className="text-slate-400 text-xs">[{alert.id}]</span>
-              <span className="text-slate-500">• Detected by {alert.source}</span>
+              <span className="text-slate-500 dark:text-slate-400 text-xs">[{alert.id}]</span>
+              <span className="text-slate-400 dark:text-slate-500">• Detected by {alert.source}</span>
             </div>
-            <h3 className="text-base font-bold text-slate-100">{alert.title}</h3>
-            <p className="text-slate-300">{alert.description}</p>
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{alert.title}</h3>
+            <p className="text-slate-600 dark:text-slate-300">{alert.description}</p>
           </div>
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 text-sm px-2 py-1"
+            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-sm px-2 py-1"
           >
             ✕
           </button>
@@ -98,30 +98,30 @@ export const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
 
         {/* Metadata Strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-          <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">TARGET ENDPOINT</span>
-            <span className="font-bold text-cyan-300">{alert.endpoint}</span>
+          <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block">TARGET ENDPOINT</span>
+            <span className="font-bold text-cyan-700 dark:text-cyan-300">{alert.endpoint}</span>
           </div>
-          <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">USER CONTEXT</span>
-            <span className="font-bold text-slate-200">{alert.user}</span>
+          <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block">USER CONTEXT</span>
+            <span className="font-bold text-slate-800 dark:text-slate-200">{alert.user}</span>
           </div>
-          <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">MITRE TACTIC</span>
-            <span className="font-bold text-purple-300">{alert.mitreTechniqueId}</span>
+          <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block">MITRE TACTIC</span>
+            <span className="font-bold text-purple-700 dark:text-purple-300">{alert.mitreTechniqueId}</span>
           </div>
-          <div className="p-2.5 rounded bg-slate-950 border border-slate-800">
-            <span className="text-[10px] text-slate-400 block">CONFIDENCE</span>
-            <span className="font-bold text-emerald-400">{alert.confidenceScore}%</span>
+          <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 block">CONFIDENCE</span>
+            <span className="font-bold text-emerald-600 dark:text-emerald-400">{alert.confidenceScore}%</span>
           </div>
         </div>
 
         {/* Gemini AI Co-Pilot Investigation Section */}
-        <div className="p-4 rounded-lg bg-gradient-to-br from-purple-950/30 via-slate-900 to-cyan-950/20 border border-purple-800/60 space-y-3">
-          <div className="flex items-center justify-between border-b border-purple-900/50 pb-2">
+        <div className="p-4 rounded-lg bg-gradient-to-br from-purple-50 via-white to-cyan-50 dark:from-purple-950/30 dark:via-slate-900 dark:to-cyan-950/20 border border-purple-200 dark:border-purple-800/60 space-y-3 transition-colors">
+          <div className="flex items-center justify-between border-b border-purple-200 dark:border-purple-900/50 pb-2">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-purple-400" />
-              <span className="font-bold text-slate-100 text-xs">
+              <Sparkles className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">
                 TIER-3 AI SOC CO-PILOT ROOT CAUSE & THREAT ANALYSIS
               </span>
             </div>
@@ -138,31 +138,31 @@ export const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
 
           {aiAnalysis ? (
             <div className="space-y-3">
-              <div className="text-slate-200 leading-relaxed bg-slate-950/70 p-3 rounded border border-slate-800">
-                <span className="font-bold text-purple-300 block mb-1">EXECUTIVE SUMMARY:</span>
+              <div className="text-slate-800 dark:text-slate-200 leading-relaxed bg-white/80 dark:bg-slate-950/70 p-3 rounded border border-slate-200 dark:border-slate-800">
+                <span className="font-bold text-purple-700 dark:text-purple-300 block mb-1">EXECUTIVE SUMMARY:</span>
                 {aiAnalysis.executiveSummary}
               </div>
 
               {aiAnalysis.threatActor && (
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="text-slate-400">ATTRIBUTED THREAT ACTOR:</span>
-                  <span className="text-red-400 font-bold px-2 py-0.5 rounded bg-red-950 border border-red-800">
+                  <span className="text-slate-600 dark:text-slate-400">ATTRIBUTED THREAT ACTOR:</span>
+                  <span className="text-red-700 dark:text-red-400 font-bold px-2 py-0.5 rounded bg-red-100 dark:bg-red-950 border border-red-300 dark:border-red-800">
                     {aiAnalysis.threatActor}
                   </span>
                 </div>
               )}
 
-              <div className="text-slate-300 bg-slate-950/70 p-3 rounded border border-slate-800">
-                <span className="font-bold text-cyan-300 block mb-1">TECHNICAL ROOT CAUSE:</span>
+              <div className="text-slate-800 dark:text-slate-300 bg-white/80 dark:bg-slate-950/70 p-3 rounded border border-slate-200 dark:border-slate-800">
+                <span className="font-bold text-cyan-700 dark:text-cyan-300 block mb-1">TECHNICAL ROOT CAUSE:</span>
                 {aiAnalysis.rootCause}
               </div>
 
               <div>
-                <span className="font-bold text-amber-300 block mb-1">RECOMMENDED ACTIONS:</span>
+                <span className="font-bold text-amber-700 dark:text-amber-300 block mb-1">RECOMMENDED ACTIONS:</span>
                 <div className="space-y-1">
                   {aiAnalysis.recommendedActions.map((rec, i) => (
-                    <div key={i} className="flex items-start gap-1.5 text-slate-300">
-                      <span className="text-amber-400 font-bold">{i + 1}.</span>
+                    <div key={i} className="flex items-start gap-1.5 text-slate-700 dark:text-slate-300">
+                      <span className="text-amber-600 dark:text-amber-400 font-bold">{i + 1}.</span>
                       <span>{rec}</span>
                     </div>
                   ))}
@@ -170,14 +170,14 @@ export const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
               </div>
 
               {aiAnalysis.defenseGapNote && (
-                <div className="text-purple-300 text-[11px] bg-purple-950/40 p-2.5 rounded border border-purple-800/80">
-                  <span className="font-bold text-purple-400 block mb-0.5">D3FEND DEFENSE NOTE:</span>
+                <div className="text-purple-800 dark:text-purple-300 text-[11px] bg-purple-50 dark:bg-purple-950/40 p-2.5 rounded border border-purple-200 dark:border-purple-800/80">
+                  <span className="font-bold text-purple-700 dark:text-purple-400 block mb-0.5">D3FEND DEFENSE NOTE:</span>
                   {aiAnalysis.defenseGapNote}
                 </div>
               )}
             </div>
           ) : (
-            <div className="py-6 text-center text-slate-400 space-y-2">
+            <div className="py-6 text-center text-slate-500 dark:text-slate-400 space-y-2">
               <p>Click "Run AI Deep Audit" to let Gemini 3.8 Flash dissect the root cause and provide instant containment steps.</p>
             </div>
           )}
@@ -185,26 +185,26 @@ export const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
 
         {/* IOCs Extracted */}
         <div className="space-y-2">
-          <span className="font-bold text-slate-200 block">EXTRACTED INDICATORS OF COMPROMISE (IOCs)</span>
+          <span className="font-bold text-slate-900 dark:text-slate-200 block">EXTRACTED INDICATORS OF COMPROMISE (IOCs)</span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {alert.iocs.map((ioc, idx) => (
               <div
                 key={idx}
-                className="p-2.5 rounded bg-slate-950 border border-slate-850 flex items-center justify-between"
+                className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 flex items-center justify-between"
               >
                 <div>
-                  <span className="text-[10px] px-1 rounded bg-slate-800 text-slate-400 uppercase">
+                  <span className="text-[10px] px-1 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 uppercase">
                     {ioc.type}
                   </span>
-                  <div className="text-xs font-bold text-slate-200 truncate max-w-[200px] mt-0.5">
+                  <div className="text-xs font-bold text-slate-900 dark:text-slate-200 truncate max-w-[200px] mt-0.5">
                     {ioc.value}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-red-400">{ioc.threatScore}/100</span>
+                  <span className="text-xs font-bold text-red-600 dark:text-red-400">{ioc.threatScore}/100</span>
                   <button
                     onClick={() => onPivotToHunting(ioc.value)}
-                    className="text-[10px] px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300"
+                    className="text-[10px] px-2 py-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-cyan-700 dark:text-cyan-300"
                   >
                     Pivot
                   </button>
@@ -215,13 +215,13 @@ export const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
           <button
             onClick={() => {
               onMarkRemediated(alert.id);
               onClose();
             }}
-            className="px-3 py-1.5 rounded border border-slate-700 text-slate-300 hover:text-slate-100"
+            className="px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             Mark as Remediated / False Positive
           </button>
@@ -233,7 +233,7 @@ export const AlertDetailModal: React.FC<AlertDetailModalProps> = ({
                   onExecutePlaybook(alert.playbookId!);
                   onClose();
                 }}
-                className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(6,182,212,0.4)]"
+                className="px-4 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-white dark:text-slate-950 font-bold flex items-center gap-1.5 shadow-[0_0_12px_rgba(6,182,212,0.4)]"
               >
                 <Zap className="w-3.5 h-3.5 fill-current" />
                 <span>Trigger Shuffle Playbook ({alert.playbookId})</span>

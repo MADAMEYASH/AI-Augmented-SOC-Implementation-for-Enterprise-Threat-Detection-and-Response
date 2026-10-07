@@ -59,27 +59,27 @@ export const AiAnomalyEngineView: React.FC<AiAnomalyEngineViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Sub-navigation & Overview Banner */}
-      <div className="p-4 rounded-lg bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
+      <div className="p-4 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-4 transition-colors">
         <div>
           <div className="flex items-center gap-2">
-            <Brain className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-base font-bold font-mono text-slate-100">
+            <Brain className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+            <h2 className="text-base font-bold font-mono text-slate-900 dark:text-slate-100">
               AI-DRIVEN ANOMALY DETECTION & THREAT INTELLIGENCE
             </h2>
           </div>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-mono mt-0.5">
             LogAI Semantic Parsing & Drain Clustering • Alkido Behavioral Sequence & Entropy Engine • AlienVault OTX & VT Feeds
           </p>
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex rounded border border-slate-700 bg-slate-950 p-0.5 font-mono text-xs">
+        <div className="flex rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-950 p-0.5 font-mono text-xs">
           <button
             onClick={() => setActiveSubTab('logai')}
             className={`px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 ${
               activeSubTab === 'logai'
                 ? 'bg-cyan-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
@@ -90,7 +90,7 @@ export const AiAnomalyEngineView: React.FC<AiAnomalyEngineViewProps> = ({
             className={`px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 ${
               activeSubTab === 'alkido'
                 ? 'bg-cyan-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             <TrendingUp className="w-3.5 h-3.5" />
@@ -101,7 +101,7 @@ export const AiAnomalyEngineView: React.FC<AiAnomalyEngineViewProps> = ({
             className={`px-3 py-1.5 rounded transition cursor-pointer flex items-center gap-1.5 ${
               activeSubTab === 'intel'
                 ? 'bg-cyan-500 text-slate-950 font-bold shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
             <Globe className="w-3.5 h-3.5" />
@@ -115,37 +115,37 @@ export const AiAnomalyEngineView: React.FC<AiAnomalyEngineViewProps> = ({
         <div className="space-y-4">
           {/* Algorithm Metrics Strip */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800 font-mono">
-              <div className="text-[10px] text-slate-400">LOGAI PARSER MODEL</div>
-              <div className="text-base font-bold text-cyan-300">Drain-3 Deep Semantic</div>
-              <div className="text-[10px] text-slate-500 mt-1">Depth: 4 | Sim Thresh: 0.85</div>
+            <div className="p-3.5 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm font-mono transition-colors">
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">LOGAI PARSER MODEL</div>
+              <div className="text-base font-bold text-cyan-700 dark:text-cyan-300">Drain-3 Deep Semantic</div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Depth: 4 | Sim Thresh: 0.85</div>
             </div>
-            <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800 font-mono">
-              <div className="text-[10px] text-slate-400">UNSUPERVISED CLUSTERS</div>
-              <div className="text-base font-bold text-purple-300">{Object.keys(clusterStats).length} Clusters</div>
-              <div className="text-[10px] text-slate-500 mt-1">DBSCAN Epsilon: 0.42</div>
+            <div className="p-3.5 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm font-mono transition-colors">
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">UNSUPERVISED CLUSTERS</div>
+              <div className="text-base font-bold text-purple-700 dark:text-purple-300">{Object.keys(clusterStats).length} Clusters</div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">DBSCAN Epsilon: 0.42</div>
             </div>
-            <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800 font-mono">
-              <div className="text-[10px] text-slate-400">OUTLIER DEVIATION RATE</div>
-              <div className="text-base font-bold text-red-400">3.4% Anomaly Spike</div>
-              <div className="text-[10px] text-slate-500 mt-1">Isolation Forest: 120 trees</div>
+            <div className="p-3.5 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm font-mono transition-colors">
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">OUTLIER DEVIATION RATE</div>
+              <div className="text-base font-bold text-red-600 dark:text-red-400">3.4% Anomaly Spike</div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Isolation Forest: 120 trees</div>
             </div>
-            <div className="p-3.5 rounded-lg bg-slate-900/80 border border-slate-800 font-mono">
-              <div className="text-[10px] text-slate-400">PARSED TEMPLATES</div>
-              <div className="text-base font-bold text-emerald-400">14 Unique Templates</div>
-              <div className="text-[10px] text-slate-500 mt-1">100% Parameterized</div>
+            <div className="p-3.5 rounded-lg bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-sm font-mono transition-colors">
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">PARSED TEMPLATES</div>
+              <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">14 Unique Templates</div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">100% Parameterized</div>
             </div>
           </div>
 
           {/* Cluster Visualization & Templates */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Left: Clusters Breakdown (2 Cols) */}
-            <div className="lg:col-span-2 p-4 rounded-lg bg-slate-900/90 border border-slate-800 space-y-3 font-mono">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <span className="text-xs font-bold text-slate-200">
+            <div className="lg:col-span-2 p-4 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3 font-mono transition-colors">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-200">
                   LOGAI SEQUENCE CLUSTERS & DEVIATION SCORING
                 </span>
-                <span className="text-[10px] text-slate-400">Dynamic Clustering Engine</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400">Dynamic Clustering Engine</span>
               </div>
 
               <div className="space-y-3">
