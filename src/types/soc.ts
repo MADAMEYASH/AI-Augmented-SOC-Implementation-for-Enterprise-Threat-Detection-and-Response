@@ -31,8 +31,9 @@ export interface SecurityAlert {
   severity: ThreatSeverity;
   status: AlertStatus;
   detectedAt: string;
-  source: 'LogAI' | 'Alkido' | 'Sophos XDR' | 'Splunk Correlation' | 'Elastic SIEM' | 'ThreatIntel Feed';
+  source: string;
   endpoint: string;
+  host?: string;
   user: string;
   mitreTactic: string;
   mitreTechniqueId: string;
@@ -46,6 +47,7 @@ export interface SecurityAlert {
     threatScore: number; // 0 - 100
   }[];
   playbookId?: string;
+  timestamp?: string;
   aiAnalysis?: {
     summary: string;
     rootCause: string;

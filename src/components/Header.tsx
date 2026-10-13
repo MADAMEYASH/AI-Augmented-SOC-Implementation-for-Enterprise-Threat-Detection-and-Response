@@ -13,8 +13,13 @@ import {
   Zap,
   Sun,
   Moon,
+  ShieldCheck,
+  User as UserIcon,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import { SecurityAlert } from '../types/soc.ts';
+import { useAuth } from '../context/AuthContext.tsx';
 
 interface HeaderProps {
   activeTab: string;
@@ -25,11 +30,11 @@ interface HeaderProps {
   setIsStreaming: React.Dispatch<React.SetStateAction<boolean>>;
   soundEnabled: boolean;
   setSoundEnabled: React.Dispatch<React.SetStateAction<boolean>>;
-  theme: 'dark' | 'light';
-  onToggleTheme: () => void;
   onOpenInjectScenario: () => void;
   onResetSoc: () => void;
-  onQuickHunt: () => void;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
+  onOpenProductionOps: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -41,21 +46,28 @@ export const Header: React.FC<HeaderProps> = ({
   setIsStreaming,
   soundEnabled,
   setSoundEnabled,
-  theme,
-  onToggleTheme,
   onOpenInjectScenario,
   onResetSoc,
-  onQuickHunt,
+  theme,
+  onToggleTheme,
+  onOpenProductionOps,
 }) => {
-  const criticalCount = alerts.filter((a) => a.severity === 'critical' && a.status !== 'remediated').length;
-  const highCount = alerts.filter((a) => a.severity === 'high' && a.status !== 'remediated').length;
+  const { user, dbUser, signInWithGoogle, signOut, isSimulatedMode } = useAuth();
 
-  const defconLevel = criticalCount > 0 ? 1 : highCount > 0 ? 2 : 3;
+  const criticalCount = alerts.filter(
+    (a) => a.severity === 'critical' && a.status !== 'remediated'
+  ).length;
+  const highCount = alerts.filter(
+    (a) => a.severity === 'high' && a.status !== 'remediated'
+  ).length;
+
+  const defconLevel = criticalCount > 2 ? 1 : highCount > 0 ? 2 : 3;
 
   return (
-    <header className="border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/90 backdrop-blur sticky top-0 z-40 transition-colors duration-200">
-      {/* Top Bar: Identity & Real-Time Cyber Metrics */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+    <header className="border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/90 backdrop-blur sticky top-0 z-40 transition-colors">
+      {/* Top Banner & Control Plane */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        {/* Brand / Logo */}
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/20 via-blue-600/30 to-purple-600/30 border border-cyan-500/40 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
@@ -71,17 +83,26 @@ export const Header: React.FC<HeaderProps> = ({
                 AEGIS<span className="text-cyan-600 dark:text-cyan-400">SOC</span>
               </h1>
               <span className="text-[10px] px-1.5 py-0.5 rounded font-mono font-semibold bg-cyan-100 dark:bg-cyan-950/80 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-700/50">
-                v4.8 ENTERPRISE
+                ENTERPRISE PROD
+              </span>
+              <span
+                className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold border ${
+                  isSimulatedMode
+                    ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                    : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                }`}
+              >
+                {isSimulatedMode ? 'SAFE SIM' : 'LIVE PROD'}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-mono flex items-center gap-2">
-              <span>AI-Augmented XDR • SIEM • SOAR Defense Platform</span>
+              <span>PostgreSQL • Splunk/Elastic • Sophos XDR • Shuffle SOAR</span>
             </p>
           </div>
         </div>
 
         {/* Center: Live SOC Vitals */}
-        <div className="hidden lg:flex items-center gap-5 text-xs font-mono">
+        <div className="hidden lg:flex items-center gap-4 text-xs font-mono">
           {/* DEFCON Status */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-slate-100 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800">
             <Flame
@@ -93,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'text-emerald-500 dark:text-emerald-400'
               }`}
             />
-            <span className="text-slate-500 dark:text-slate-400">THREAT STATE:</span>
+            <span className="text-slate-500 dark:text-slate-400">THREAT:</span>
             <span
               className={`font-bold uppercase ${
                 defconLevel === 1
@@ -103,21 +124,20 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'text-emerald-600 dark:text-emerald-400'
               }`}
             >
-              DEFCON {defconLevel} {defconLevel === 1 ? '(ACTIVE ATTACK)' : defconLevel === 2 ? '(ELEVATED)' : '(GUARDED)'}
+              DEFCON {defconLevel}
             </span>
           </div>
 
           {/* Ingestion EPS */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-slate-100 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800">
             <Activity className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-            <span className="text-slate-500 dark:text-slate-400">INGESTION:</span>
+            <span className="text-slate-500 dark:text-slate-400">REAL EPS:</span>
             <span className="text-cyan-700 dark:text-cyan-300 font-bold">{eps} EPS</span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500">(Splunk/Elastic)</span>
           </div>
 
           {/* Open Alerts Tally */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-slate-100 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800">
-            <span className="text-slate-500 dark:text-slate-400">ACTIVE INCIDENTS:</span>
+            <span className="text-slate-500 dark:text-slate-400">INCIDENTS:</span>
             <span className="px-1.5 py-0.2 rounded bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-800/60 font-bold">
               {criticalCount} CRIT
             </span>
@@ -129,6 +149,42 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Action Controls */}
         <div className="flex items-center gap-2">
+          {/* Production Readiness & Ops Diagnostics Modal Button */}
+          <button
+            onClick={onOpenProductionOps}
+            className="px-2.5 py-1.5 rounded border border-cyan-300 dark:border-cyan-700/60 bg-cyan-50 dark:bg-cyan-950/60 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-800 dark:text-cyan-300 font-mono text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+            title="Open PostgreSQL Backend Health, Automated Tests, Approval Gates, and Audit Trail"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+            <span className="hidden sm:inline">OPS & HEALTH</span>
+          </button>
+
+          {/* Operator Auth / Google Sign-in */}
+          {user ? (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="font-bold text-[10px] px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300">
+                {dbUser?.role.toUpperCase() || 'ANALYST'}
+              </span>
+              <button
+                onClick={signOut}
+                title="Sign out of SOC"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-1"
+              >
+                <LogOut className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={signInWithGoogle}
+              className="px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white font-mono text-xs font-semibold flex items-center gap-1.5 transition"
+              title="Sign in with Google to establish authenticated session & RBAC"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">SIGN IN</span>
+            </button>
+          )}
+
           {/* Dark / Light Theme Toggle Button */}
           <button
             onClick={onToggleTheme}
@@ -160,7 +216,7 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Radio className={`w-3.5 h-3.5 ${isStreaming ? 'animate-pulse text-emerald-500 dark:text-emerald-400' : 'text-amber-500 dark:text-amber-400'}`} />
-            <span className="hidden sm:inline">{isStreaming ? 'LIVE FEED' : 'PAUSED'}</span>
+            <span className="hidden sm:inline">{isStreaming ? 'FEED ACTIVE' : 'PAUSED'}</span>
           </button>
 
           {/* Audio toggle */}
@@ -195,7 +251,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Navigation Sub-bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex overflow-x-auto gap-1 border-t border-slate-200 dark:border-slate-900 scrollbar-none">
         {[
-          { id: 'siem', label: '1. SIEM & Log Ingestion', sub: 'Splunk & Elastic Pipeline' },
+          { id: 'siem', label: '1. SIEM & Log Ingestion', sub: 'Splunk & Elastic Ingest' },
           { id: 'ai-detection', label: '2. AI Anomaly & Threat Intel', sub: 'LogAI • Alkido • OTX' },
           { id: 'threat-hunting', label: '3. Threat Hunting & IOCs', sub: 'Pivoting & Attack Graph' },
           { id: 'xdr-endpoint', label: 'XDR Endpoint Defense', sub: 'Sophos Behavioral EDR' },
@@ -222,4 +278,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-

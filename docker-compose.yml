@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aegis-soc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aegis_soc
+      POSTGRES_USER: ai_studio_user
+      POSTGRES_PASSWORD: production_strong_password_change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_studio_user -d aegis_soc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  aegis-soc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis-soc-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      SQL_HOST: postgres
+      SQL_DB_NAME: aegis_soc
+      SQL_USER: ai_studio_user
+      SQL_PASSWORD: production_strong_password_change_me
+      SQL_ADMIN_USER: ai_studio_user
+      SQL_ADMIN_PASSWORD: production_strong_password_change_me
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

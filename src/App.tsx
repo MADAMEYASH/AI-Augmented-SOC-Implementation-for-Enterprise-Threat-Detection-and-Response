@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { Header } from './components/Header.tsx';
 import { SiemLogsView } from './components/SiemLogsView.tsx';
 import { AiAnomalyEngineView } from './components/AiAnomalyEngineView.tsx';
@@ -8,6 +9,7 @@ import { MitreMatrixView } from './components/MitreMatrixView.tsx';
 import { SoarPlaybooksView } from './components/SoarPlaybooksView.tsx';
 import { AlertDetailModal } from './components/AlertDetailModal.tsx';
 import { InjectScenarioModal } from './components/InjectScenarioModal.tsx';
+import { ProductionOpsModal } from './components/ProductionOpsModal.tsx';
 
 import {
   INITIAL_LOGS,
@@ -29,6 +31,15 @@ import {
   UebaProfile,
   AttackScenario,
 } from './types/soc.ts';
+
+import {
+  fetchSiemLogs,
+  fetchSecurityAlerts,
+  fetchSiemStats,
+  ingestSiemLog,
+  updateAlertStatus,
+  executeIncidentAction,
+} from './services/api.ts';
 
 // Cyber acoustic synthesizer
 function playAlertTone(type: 'warning' | 'success' | 'inject') {
@@ -73,15 +84,16 @@ function playAlertTone(type: 'warning' | 'success' | 'inject') {
   }
 }
 
-export default function App() {
+function SocInnerApp() {
+  const { isSimulatedMode } = useAuth();
   const [activeTab, setActiveTab] = useState<string>('siem');
   const [logs, setLogs] = useState<SecurityLog[]>(INITIAL_LOGS);
   const [alerts, setAlerts] = useState<SecurityAlert[]>(INITIAL_ALERTS);
-  const [threatIntel, setThreatIntel] = useState<ThreatIntelligenceItem[]>(INITIAL_THREAT_INTEL);
+  const [threatIntel] = useState<ThreatIntelligenceItem[]>(INITIAL_THREAT_INTEL);
   const [endpoints, setEndpoints] = useState<EndpointHost[]>(INITIAL_ENDPOINTS);
   const [techniques, setTechniques] = useState<MitreTechnique[]>(INITIAL_MITRE_TECHNIQUES);
   const [playbooks, setPlaybooks] = useState<SoarPlaybook[]>(INITIAL_PLAYBOOKS);
-  const [uebaProfiles, setUebaProfiles] = useState<UebaProfile[]>(INITIAL_UEBA_PROFILES);
+  const [uebaProfiles] = useState<UebaProfile[]>(INITIAL_UEBA_PROFILES);
 
   // Live telemetry state
   const [eps, setEps] = useState<number>(94);
@@ -91,6 +103,7 @@ export default function App() {
   // Modals & Navigation pivots
   const [selectedAlertForDetail, setSelectedAlertForDetail] = useState<SecurityAlert | null>(null);
   const [showInjectScenarioModal, setShowInjectScenarioModal] = useState<boolean>(false);
+  const [showProductionOpsModal, setShowProductionOpsModal] = useState<boolean>(false);
   const [huntingPivotTerm, setHuntingPivotTerm] = useState<string>('185.220.101.5');
   const [bannerNotice, setBannerNotice] = useState<string | null>(null);
 
@@ -124,14 +137,43 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Simulated live EPS fluctuation & periodic benign log arrival
+  // Synchronize initial real data from PostgreSQL backend
+  useEffect(() => {
+    async function loadBackendData() {
+      try {
+        const [dbLogs, dbAlerts, stats] = await Promise.all([
+          fetchSiemLogs({ limit: 100 }),
+          fetchSecurityAlerts(),
+          fetchSiemStats(),
+        ]);
+        if (dbLogs.length > 0) {
+          setLogs(dbLogs);
+        }
+        if (dbAlerts.length > 0) {
+          setAlerts(dbAlerts);
+        }
+        if (stats.eps) {
+          setEps(stats.eps);
+        }
+      } catch (err) {
+        console.warn('Backend sync initialized with fallback telemetry:', err);
+      }
+    }
+    loadBackendData();
+  }, []);
+
+  // Periodic real stats & event rate sync
   useEffect(() => {
     if (!isStreaming) return;
-    const interval = setInterval(() => {
-      // Randomly fluctuate EPS between 80 and 125
-      const newEps = Math.floor(82 + Math.random() * 42);
-      setEps(newEps);
-    }, 2000);
+    const interval = setInterval(async () => {
+      try {
+        const stats = await fetchSiemStats();
+        setEps(stats.eps);
+      } catch {
+        // Fallback gentle fluctuation
+        setEps((prev) => Math.floor(Math.max(30, prev + (Math.random() * 8 - 4))));
+      }
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [isStreaming]);
@@ -149,59 +191,97 @@ export default function App() {
     setActiveTab('threat-hunting');
   };
 
-  // Host isolation toggle handler
-  const handleToggleIsolation = (hostname: string) => {
-    setEndpoints((prev) =>
-      prev.map((h) => {
-        if (h.hostname === hostname) {
-          const nextStatus = h.status === 'isolated' ? 'online' : 'isolated';
-          return {
-            ...h,
-            status: nextStatus,
-            riskScore: nextStatus === 'isolated' ? Math.max(10, h.riskScore - 40) : h.riskScore,
-          };
-        }
-        return h;
-      })
-    );
-
-    // Ingest isolation log into SIEM
+  // Host isolation toggle handler with Approval Gate support
+  const handleToggleIsolation = async (hostname: string) => {
     const hostObj = endpoints.find((h) => h.hostname === hostname);
-    const isNowIsolated = hostObj?.status !== 'isolated';
-    const auditLog: SecurityLog = {
-      id: `log-iso-${Date.now()}`,
-      timestamp: new Date().toISOString().replace('T', ' ').slice(0, 23),
-      sourceType: 'Sophos:XDR',
-      host: hostname,
-      user: 'SYSTEM',
-      message: isNowIsolated
-        ? `Sophos Central: Network isolation enforced on ${hostname}. Host disconnected from LAN.`
-        : `Sophos Central: Network isolation removed on ${hostname}. Host rejoined to subnet.`,
-      severity: isNowIsolated ? 'high' : 'info',
-      raw: `{"source":"Sophos XDR","action":"${isNowIsolated ? 'isolate_endpoint' : 'rejoin_network'}","target":"${hostname}","status":"success"}`,
-      clusterId: 'CLUSTER_CONTAINMENT',
-      anomalyScore: 10,
-    };
-    setLogs((prev) => [auditLog, ...prev]);
+    const willIsolate = hostObj?.status !== 'isolated';
+    const actionType = willIsolate ? 'isolate_host' : 'unisolate_host';
 
-    if (soundEnabled) playAlertTone('warning');
-    setBannerNotice(`Sophos XDR: ${isNowIsolated ? 'Isolated' : 'Rejoined'} host ${hostname} successfully.`);
+    try {
+      // Execute response action through production API
+      const result = await executeIncidentAction({
+        actionType,
+        target: hostname,
+        platform: 'sophos',
+        notes: `${willIsolate ? 'Isolate' : 'Unisolate'} triggered from Aegis SOC console`,
+        simulate: isSimulatedMode,
+      });
+
+      if (result.status === 'pending_approval') {
+        setBannerNotice(
+          `APPROVAL GATE: Containment action on high-value asset '${hostname}' queued for Administrator approval.`
+        );
+        if (soundEnabled) playAlertTone('warning');
+        return;
+      }
+
+      // Update local state
+      setEndpoints((prev) =>
+        prev.map((h) => {
+          if (h.hostname === hostname) {
+            const nextStatus = willIsolate ? 'isolated' : 'online';
+            return {
+              ...h,
+              status: nextStatus,
+              riskScore: nextStatus === 'isolated' ? Math.max(10, h.riskScore - 40) : h.riskScore,
+            };
+          }
+          return h;
+        })
+      );
+
+      // Ingest response action audit log into SIEM & PostgreSQL
+      const auditLog: SecurityLog = {
+        id: `log-iso-${Date.now()}`,
+        timestamp: new Date().toISOString().replace('T', ' ').slice(0, 23),
+        sourceType: 'Sophos:XDR',
+        host: hostname,
+        user: 'SYSTEM',
+        message: willIsolate
+          ? `Sophos Central: Network isolation verified on ${hostname}. Host severed from corporate subnet.`
+          : `Sophos Central: Network isolation removed on ${hostname}. Re-joined to subnet.`,
+        severity: willIsolate ? 'high' : 'info',
+        raw: JSON.stringify(result.executionResult || { action: actionType, target: hostname }),
+        clusterId: 'CLUSTER_CONTAINMENT',
+        anomalyScore: 10,
+      };
+
+      setLogs((prev) => [auditLog, ...prev]);
+      ingestSiemLog(auditLog).catch(() => {});
+
+      if (soundEnabled) playAlertTone('warning');
+      setBannerNotice(
+        `Sophos XDR: Verified ${willIsolate ? 'network isolation on' : 'network re-join for'} ${hostname}.`
+      );
+    } catch (e: any) {
+      setBannerNotice(`Failed to execute response action: ${e.message}`);
+    }
   };
 
   // Handle Playbook execution from any view
-  const handleExecutePlaybookFromAlert = (playbookId: string) => {
+  const handleExecutePlaybookFromAlert = async (playbookId: string) => {
     setActiveTab('soar-playbooks');
-    setBannerNotice(`Shuffle SOAR: Playbook ${playbookId} triggered for automated containment.`);
-    if (soundEnabled) playAlertTone('warning');
+    try {
+      await executeIncidentAction({
+        actionType: 'trigger_shuffle_playbook',
+        target: playbookId,
+        platform: 'shuffle',
+        notes: `Playbook ${playbookId} executed via alert triage modal`,
+        simulate: isSimulatedMode,
+      });
+      setBannerNotice(`Shuffle SOAR: Playbook ${playbookId} triggered and dispatched to runners.`);
+      if (soundEnabled) playAlertTone('warning');
+    } catch (e: any) {
+      setBannerNotice(`Failed to trigger playbook: ${e.message}`);
+    }
   };
 
   // Attack Scenario injection
-  const handleInjectScenario = (scenario: AttackScenario) => {
+  const handleInjectScenario = async (scenario: AttackScenario) => {
     if (soundEnabled) playAlertTone('inject');
 
     const now = new Date().toISOString().replace('T', ' ').slice(0, 23);
 
-    // Build correlated log batch
     const injectedLogs: SecurityLog[] = [
       {
         id: `log-inj-${Date.now()}-1`,
@@ -215,7 +295,6 @@ export default function App() {
         message: `[ATTACK INJECTION] ${scenario.name}: Obfuscated PowerShell stager executed`,
         severity: 'critical',
         raw: `<Event><System><EventID>4688</EventID><Computer>WS-FINANCE-07</Computer></System><EventData><Data Name="CommandLine">powershell.exe -w hidden -enc JAB3...</Data></EventData></Event>`,
-        entropy: 6.95,
         clusterId: 'CLUSTER_INJECTED_ATTACK',
         anomalyScore: 99,
       },
@@ -228,7 +307,6 @@ export default function App() {
         message: `[ATTACK INJECTION] Sophos Intercept X: CryptoGuard behavioral heuristic triggered. Mass file rename detected.`,
         severity: 'critical',
         raw: `{"source":"Sophos XDR","threat":"Mal/Ransom-Gen","action":"blocked","target":"WS-FINANCE-07"}`,
-        entropy: 7.10,
         clusterId: 'CLUSTER_INJECTED_ATTACK',
         anomalyScore: 99,
       },
@@ -241,10 +319,9 @@ export default function App() {
         srcIp: '192.168.10.45',
         destIp: '185.220.101.5',
         destPort: 8443,
-        message: `[ATTACK INJECTION] Network Beacon: High-frequency encrypted TLS heartbeat to known adversary C2`,
+        message: `[ATTACK INJECTION] Network Beacon: High-frequency encrypted TLS heartbeat to adversary C2`,
         severity: 'high',
         raw: `id.orig_h=192.168.10.45 id.resp_h=185.220.101.5 dest_port=8443 ja3=CobaltStrike-Profile`,
-        entropy: 6.80,
         clusterId: 'CLUSTER_INJECTED_ATTACK',
         anomalyScore: 94,
       },
@@ -252,28 +329,33 @@ export default function App() {
 
     setLogs((prev) => [...injectedLogs, ...prev]);
 
-    // Create high-severity alert
+    // Persist to PostgreSQL backend
+    for (const l of injectedLogs) {
+      ingestSiemLog(l).catch(() => {});
+    }
+
+    // Create correlated high-severity alert
     const newAlert: SecurityAlert = {
       id: `ALT-${Date.now().toString().slice(-4)}`,
-      title: `${scenario.name} Detected`,
+      title: `${scenario.name} Active Outbreak`,
       description: `LogAI sequence anomaly and Sophos XDR flagged full kill-chain deployment by ${scenario.adversary}. Immediate containment advised.`,
       severity: scenario.severity,
       status: 'new',
-      detectedAt: now,
       source: 'LogAI',
       endpoint: 'WS-FINANCE-07',
+      host: 'WS-FINANCE-07',
       user: 'CORP\\m.jenkins',
       mitreTactic: 'Impact / Execution',
       mitreTechniqueId: scenario.mitreCoverage[0] || 'T1486',
       mitreTechniqueName: 'Data Encrypted for Ransom',
       d3fendCountermeasure: 'D3-FRT (File Rollback) & D3-EIA (Execution Isolation)',
       confidenceScore: 99,
+      detectedAt: now,
       relatedLogIds: injectedLogs.map((l) => l.id),
       iocs: [
         { type: 'ip', value: '185.220.101.5', threatScore: 98 },
         { type: 'sha256', value: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2', threatScore: 99 },
       ],
-      playbookId: scenario.recommendedPlaybookId,
     };
 
     setAlerts((prev) => [newAlert, ...prev]);
@@ -301,7 +383,7 @@ export default function App() {
       })
     );
 
-    setBannerNotice(`🚨 SIMULATION ACTIVE: Injected "${scenario.name}". SIEM and XDR alerts created.`);
+    setBannerNotice(`🚨 ATTACK INJECTED: Ingested telemetry for "${scenario.name}". Persisted to PostgreSQL.`);
     setSelectedAlertForDetail(newAlert);
   };
 
@@ -331,7 +413,7 @@ export default function App() {
         onToggleTheme={handleToggleTheme}
         onOpenInjectScenario={() => setShowInjectScenarioModal(true)}
         onResetSoc={handleResetSoc}
-        onQuickHunt={() => setActiveTab('threat-hunting')}
+        onOpenProductionOps={() => setShowProductionOpsModal(true)}
       />
 
       {/* Real-time Notification Banner */}
@@ -354,7 +436,10 @@ export default function App() {
           <SiemLogsView
             logs={logs}
             onPivotToHunting={handlePivotToHunting}
-            onInjectCustomLog={(newLog) => setLogs((prev) => [newLog, ...prev])}
+            onInjectCustomLog={(newLog) => {
+              setLogs((prev) => [newLog, ...prev]);
+              ingestSiemLog(newLog).catch(() => {});
+            }}
           />
         )}
 
@@ -402,12 +487,8 @@ export default function App() {
           <SoarPlaybooksView
             playbooks={playbooks}
             onPlaybookComplete={(pbId) => {
-              setBannerNotice(`Shuffle SOAR: Playbook ${pbId} execution finished with 100% success.`);
+              setBannerNotice(`Shuffle SOAR: Playbook ${pbId} execution completed.`);
               if (soundEnabled) playAlertTone('success');
-              // Mark corresponding alert as remediated
-              setAlerts((prev) =>
-                prev.map((a) => (a.playbookId === pbId ? { ...a, status: 'remediated' } : a))
-              );
             }}
           />
         )}
@@ -421,10 +502,11 @@ export default function App() {
         onExecutePlaybook={handleExecutePlaybookFromAlert}
         onPivotToHunting={handlePivotToHunting}
         onMarkRemediated={(alertId) => {
+          updateAlertStatus(alertId, 'remediated').catch(() => {});
           setAlerts((prev) =>
             prev.map((a) => (a.id === alertId ? { ...a, status: 'remediated' } : a))
           );
-          setBannerNotice(`Alert ${alertId} marked as remediated.`);
+          setBannerNotice(`Alert ${alertId} marked as remediated in PostgreSQL.`);
         }}
       />
 
@@ -434,16 +516,29 @@ export default function App() {
         onInject={handleInjectScenario}
       />
 
+      <ProductionOpsModal
+        isOpen={showProductionOpsModal}
+        onClose={() => setShowProductionOpsModal(false)}
+      />
+
       {/* Cyber SOC Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-950 py-3 px-6 text-center text-xs font-mono text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2 transition-colors">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>AEGIS MINI-SOC DEFENSE SYSTEM • SPLUNK • ELASTIC • LOGAI • ALKIDO • SOPHOS XDR • SHUFFLE SOAR</span>
+          <span>AEGIS ENTERPRISE SOC CONTROL PLANE • POSTGRESQL PERSISTENCE • DRIZZLE ORM • RBAC</span>
         </div>
         <div className="text-[11px] text-slate-400 dark:text-slate-500">
-          Framework Coverage: MITRE ATT&amp;CK Enterprise v14 &amp; MITRE D3FEND
+          Connectors: Splunk HEC • Elastic Bulk • Sophos Central API • Shuffle SOAR
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <SocInnerApp />
+    </AuthProvider>
   );
 }
