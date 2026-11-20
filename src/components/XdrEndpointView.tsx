@@ -28,9 +28,11 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
   onToggleIsolation,
   onPivotToHunting,
 }) => {
-  const [selectedHost, setSelectedHost] = useState<EndpointHost>(
-    endpoints.find((h) => h.hostname === 'WS-FINANCE-07') || endpoints[0]
-  );
+  const [selectedHostname, setSelectedHostname] = useState<string>('WS-FINANCE-07');
+  const selectedHost =
+    endpoints.find((h) => h.hostname === selectedHostname) ||
+    endpoints.find((h) => h.hostname === 'WS-FINANCE-07') ||
+    endpoints[0];
   const [showShellModal, setShowShellModal] = useState(false);
   const [shellCommand, setShellCommand] = useState('');
   const [shellHistory, setShellHistory] = useState<
@@ -241,6 +243,14 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
     );
   };
 
+  if (!selectedHost) {
+    return (
+      <div className="p-8 text-center font-mono text-xs text-slate-500">
+        Loading endpoints from PostgreSQL...
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 font-mono">
       {/* Fleet Overview Strip */}
@@ -288,7 +298,7 @@ export const XdrEndpointView: React.FC<XdrEndpointViewProps> = ({
               return (
                 <div
                   key={host.id}
-                  onClick={() => setSelectedHost(host)}
+                  onClick={() => setSelectedHostname(host.hostname)}
                   className={`p-3 rounded border cursor-pointer transition space-y-1.5 ${
                     isSelected
                       ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-500 dark:border-cyan-400 ring-1 ring-cyan-500 dark:ring-cyan-400/40'

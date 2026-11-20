@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Zap,
   Play,
@@ -15,7 +15,11 @@ import {
   Plus,
 } from 'lucide-react';
 import { PlaybookStep, SoarPlaybook } from '../types/soc.ts';
-import { generatePlaybookWithGemini } from '../services/api.ts';
+import {
+  generatePlaybookWithGemini,
+  saveSoarPlaybook,
+  executeSoarPlaybook,
+} from '../services/api.ts';
 
 interface SoarPlaybooksViewProps {
   playbooks: SoarPlaybook[];
@@ -26,7 +30,8 @@ export const SoarPlaybooksView: React.FC<SoarPlaybooksViewProps> = ({
   playbooks,
   onPlaybookComplete,
 }) => {
-  const [selectedPlaybook, setSelectedPlaybook] = useState<SoarPlaybook>(playbooks[0]);
+  const [allPlaybooks, setAllPlaybooks] = useState<SoarPlaybook[]>(playbooks);
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>('');
   const [isRunning, setIsRunning] = useState(false);
   const [activeStepIndex, setActiveStepIndex] = useState<number>(-1);
   const [executionLogs, setExecutionLogs] = useState<
@@ -37,7 +42,13 @@ export const SoarPlaybooksView: React.FC<SoarPlaybooksViewProps> = ({
   const [showAiModal, setShowAiModal] = useState(false);
   const [customScenario, setCustomScenario] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [allPlaybooks, setAllPlaybooks] = useState<SoarPlaybook[]>(playbooks);
+
+  useEffect(() => {
+    setAllPlaybooks(playbooks);
+  }, [playbooks]);
+
+  const selectedPlaybook =
+    allPlaybooks.find((pb) => pb.id === selectedPlaybookId) || allPlaybooks[0];
 
   const handleExecutePlaybook = async () => {
     if (isRunning) return;
@@ -79,6 +90,15 @@ export const SoarPlaybooksView: React.FC<SoarPlaybooksViewProps> = ({
 
     setIsRunning(false);
     setActiveStepIndex(steps.length);
+    executeSoarPlaybook(selectedPlaybook.id)
+      .then((res) => {
+        if (res.playbook) {
+          setAllPlaybooks((prev) =>
+            prev.map((pb) => (pb.id === res.playbook!.id ? res.playbook! : pb))
+          );
+        }
+      })
+      .catch(() => {});
     if (onPlaybookComplete) {
       onPlaybookComplete(selectedPlaybook.id);
     }
@@ -113,14 +133,23 @@ export const SoarPlaybooksView: React.FC<SoarPlaybooksViewProps> = ({
         })),
       };
 
+      await saveSoarPlaybook(newPb).catch(() => {});
       setAllPlaybooks((prev) => [newPb, ...prev]);
-      setSelectedPlaybook(newPb);
+      setSelectedPlaybookId(newPb.id);
       setShowAiModal(false);
       setCustomScenario('');
     } finally {
       setIsGenerating(false);
     }
   };
+
+  if (!selectedPlaybook) {
+    return (
+      <div className="p-8 text-center font-mono text-xs text-slate-500">
+        Loading SOAR playbooks from PostgreSQL...
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 font-mono">
@@ -185,7 +214,7 @@ export const SoarPlaybooksView: React.FC<SoarPlaybooksViewProps> = ({
                 <div
                   key={pb.id}
                   onClick={() => {
-                    setSelectedPlaybook(pb);
+                    setSelectedPlaybookId(pb.id);
                     handleReset();
                   }}
                   className={`p-3 rounded border cursor-pointer transition space-y-1.5 ${

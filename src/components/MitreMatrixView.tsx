@@ -24,7 +24,9 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
   onPivotToHunting,
 }) => {
   const [activeTab, setActiveTab] = useState<'attack' | 'd3fend' | 'gap'>('attack');
-  const [selectedTechnique, setSelectedTechnique] = useState<MitreTechnique>(techniques[0]);
+  const [selectedTechniqueId, setSelectedTechniqueId] = useState<string | null>(null);
+  const selectedTechnique =
+    techniques.find((t) => t.id === selectedTechniqueId) || techniques[0];
   const [deployedSet, setDeployedSet] = useState<Set<string>>(new Set());
 
   // Tactics list
@@ -59,8 +61,14 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
 
   // Gap analysis calculations
   const totalCount = techniques.length;
-  const coveredCount = techniques.filter((t) => t.gapStatus === 'covered' || t.gapStatus === 'active_threat_covered').length + deployedSet.size;
-  const coveragePct = Math.round((coveredCount / totalCount) * 100);
+  const coveredCount =
+    techniques.filter(
+      (t) =>
+        t.gapStatus === 'covered' ||
+        t.gapStatus === 'active_threat_covered' ||
+        deployedSet.has(t.id)
+    ).length;
+  const coveragePct = totalCount > 0 ? Math.round((coveredCount / totalCount) * 100) : 0;
 
   const activeThreatGaps = techniques.filter(
     (t) => t.gapStatus === 'uncovered_gap' && !deployedSet.has(t.id)
@@ -178,14 +186,14 @@ export const MitreMatrixView: React.FC<MitreMatrixViewProps> = ({
                     <div className="space-y-1.5">
                       {list.map((tech) => {
                         const isDeployed = deployedSet.has(tech.id);
-                        const isSelected = selectedTechnique.id === tech.id;
+                        const isSelected = selectedTechnique?.id === tech.id;
                         const hasActiveDetections = tech.detectedCount > 0;
                         const isUncovered = tech.gapStatus === 'uncovered_gap' && !isDeployed;
 
                         return (
                           <div
                             key={tech.id}
-                            onClick={() => setSelectedTechnique(tech)}
+                            onClick={() => setSelectedTechniqueId(tech.id)}
                             className={`p-2 rounded border cursor-pointer text-left transition ${
                               isSelected
                                 ? 'ring-2 ring-cyan-500 dark:ring-cyan-400 border-cyan-500 dark:border-cyan-400'

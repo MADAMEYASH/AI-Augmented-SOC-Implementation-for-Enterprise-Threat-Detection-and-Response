@@ -72,6 +72,51 @@ export interface ThreatIntelligenceItem {
   activeCampaign?: string;
 }
 
+export interface ExternalFeedSourceScore {
+  sourceName: 'AlienVault OTX' | 'VirusTotal' | 'AbuseIPDB' | 'CISA KEV' | 'ThreatFox' | 'URLhaus';
+  score: number; // 0 - 100
+  positives?: number;
+  totalEngines?: number;
+  pulseCount?: number;
+  details?: string;
+}
+
+export interface ExternalThreatIntelOverlay {
+  indicator: string;
+  type: 'ip' | 'domain' | 'sha256' | 'cve';
+  verdict: 'malicious' | 'suspicious' | 'benign' | 'unknown';
+  threatName?: string;
+  reputationScore: number; // 0 - 100
+  threatScore?: number;
+  confidence?: number;
+  threatActor?: string;
+  associatedThreatActor?: string;
+  malwareFamily?: string;
+  campaign?: string;
+  country?: string;
+  countryCode?: string;
+  asn?: string;
+  isp?: string;
+  firstSeenGlobal: string;
+  lastReportedGlobal: string;
+  tags: string[];
+  mitreTechniques: { id: string; name: string }[];
+  sources: ExternalFeedSourceScore[];
+  passiveDns?: string[];
+  recommendedAction: string;
+  // Local correlation overlay data
+  localCorrelation?: {
+    internalSightingsCount: number;
+    impactedHosts: string[];
+    impactedUsers: string[];
+    associatedAlertsCount: number;
+    firstSeenLocal?: string;
+    lastSeenLocal?: string;
+    severityVariance: 'higher_than_external' | 'matching' | 'lower_than_external';
+    threatGapAnalysis: string;
+  };
+}
+
 export interface EndpointHost {
   id: string;
   hostname: string;

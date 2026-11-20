@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import cors from 'cors';
+import helmet from 'helmet';
 import { db } from './src/db/index.ts';
 import {
   users,
@@ -15,25 +17,163 @@ import {
   auditLogs,
   siemConnectors,
   playbookExecutions,
+  endpoints,
+  threatIntel,
+  mitreTechniques,
+  soarPlaybooks,
+  uebaProfiles,
+  attackScenarios,
 } from './src/db/schema.ts';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { ensureBaselineDatabase, resetDatabaseToBaseline } from './src/db/seed.ts';
+import { eq, desc, sql, and, inArray } from 'drizzle-orm';
 import { requireAuth, requireRole, AuthRequest } from './src/middleware/auth.ts';
 import { logAuditEvent } from './src/services/audit.ts';
 import { getOrCreateUser } from './src/db/users.ts';
+import { sanitizeInputs } from './src/middleware/sanitize.ts';
+import { getValidatedEnv, getSafeEnvAudit } from './src/lib/env.ts';
+import { runFullSecurityAudit } from './src/services/securityAudit.ts';
+import {
+  hashPassword,
+  verifyPassword,
+  validatePasswordStrength,
+} from './src/lib/crypto-auth.ts';
 
 dotenv.config();
+
+// Strict environment configuration validation on boot
+const env = getValidatedEnv();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.set('trust proxy', 1);
-app.use(express.json({ limit: '15mb' }));
 
-// Global Security Rate Limiting
+// Suppress server fingerprinting header
+app.disable('x-powered-by');
+
+// Trust reverse proxy for Cloud Run & Cloud SQL proxy
+app.set('trust proxy', 1);
+
+// Layer 1: Filesystem & Path Traversal Guard (Block sensitive files)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  let url = req.path;
+  try {
+    url = decodeURIComponent(req.path);
+  } catch {
+    return res.status(400).json({ error: 'Malformed request path' });
+  }
+
+  // Allow Vite dev middleware to serve client-side TypeScript modules under /src/
+  // while blocking all server-only modules, config files, and production .ts access.
+  const isProd = process.env.NODE_ENV === 'production';
+  const isClientSrcTs =
+    !isProd &&
+    url.startsWith('/src/') &&
+    !url.startsWith('/src/db/') &&
+    !url.startsWith('/src/middleware/') &&
+    !url.startsWith('/src/lib/firebase-admin') &&
+    !url.startsWith('/src/lib/crypto-auth') &&
+    !url.startsWith('/src/lib/env') &&
+    !url.startsWith('/src/services/audit') &&
+    !url.startsWith('/src/services/securityAudit');
+
+  if (
+    url.includes('..') ||
+    /\/\.(env|git|htaccess|ssh|aws|gcp|config)/i.test(url) ||
+    /\.(sql|lock|env|md|dockerignore)$/i.test(url) ||
+    (/\.ts$/i.test(url) && !isClientSrcTs) ||
+    url.startsWith('/server.ts') ||
+    url.startsWith('/Dockerfile') ||
+    url.startsWith('/docker-compose') ||
+    url.startsWith('/package.json') ||
+    url.startsWith('/bun.lock') ||
+    url.startsWith('/tsconfig.json')
+  ) {
+    return res.status(403).json({ error: 'Access forbidden: Protected system resource' });
+  }
+  next();
+});
+
+// Layer 2: HTTP Security Headers & Clickjacking Protection (Helmet + CSP)
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          'https://apis.google.com',
+          'https://*.firebaseapp.com',
+        ],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https://*'],
+        connectSrc: ["'self'", 'https://*', 'wss:', 'ws:'],
+        frameSrc: [
+          "'self'",
+          'https://accounts.google.com',
+          'https://*.firebaseapp.com',
+        ],
+        frameAncestors: [
+          "'self'",
+          'https://*.google.com',
+          'https://*.googleusercontent.com',
+          'https://*.usercontent.goog',
+          'https://*.run.app',
+          'https://ai.google.dev',
+          'https://aistudio.google.com',
+        ],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: null,
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    frameguard: false,
+  })
+);
+
+// Layer 3: Controlled Cross-Origin Resource Sharing (CORS)
+const allowedOrigins = [
+  env.APP_URL,
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1');
+      const isGooglePreview =
+        origin.endsWith('.run.app') ||
+        origin.endsWith('.google.com') ||
+        origin.endsWith('.aistudio.google.com');
+      const isConfigured = Boolean(env.APP_URL && origin === env.APP_URL);
+      if (isLocal || isGooglePreview || isConfigured) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS policy: Request from origin not authorized'), false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  })
+);
+
+// Layer 4: Body Size Restriction (DoS Protection)
+app.use(express.json({ limit: '2mb' }));
+
+// Layer 5: Recursive XSS Sanitization & Prototype Pollution Protection
+app.use(sanitizeInputs);
+
+// Layer 6: Tiered Rate Limiting
 const globalLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 600, // 600 requests per minute
+  windowMs: 60 * 1000,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   validate: {
@@ -41,11 +181,47 @@ const globalLimiter = rateLimit({
     forwardedHeader: false,
     default: true,
   },
-  message: { error: 'Too many requests from this IP, please try again in 60s' },
+  message: { error: 'Global rate limit exceeded (300 req/min). Please try again in 60s.' },
 });
 app.use('/api/', globalLimiter);
 
-// Ingestion rate limiter
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 40,
+  validate: {
+    xForwardedForHeader: false,
+    forwardedHeader: false,
+    default: true,
+  },
+  message: { error: 'Authentication rate limit exceeded. Please wait 60s.' },
+});
+app.use('/api/auth/', authLimiter);
+
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 25,
+  validate: {
+    xForwardedForHeader: false,
+    forwardedHeader: false,
+    default: true,
+  },
+  message: { error: 'AI Copilot quota rate limit exceeded. Please wait 60s.' },
+});
+app.use('/api/gemini/', aiLimiter);
+
+const actionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 35,
+  validate: {
+    xForwardedForHeader: false,
+    forwardedHeader: false,
+    default: true,
+  },
+  message: { error: 'Action execution rate limit exceeded.' },
+});
+app.use('/api/incident/action', actionLimiter);
+app.use('/api/incident/approve', actionLimiter);
+
 const ingestLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 3000,
@@ -54,11 +230,23 @@ const ingestLimiter = rateLimit({
     forwardedHeader: false,
     default: true,
   },
-  message: { error: 'SIEM Ingestion rate limit exceeded' },
+  message: { error: 'SIEM Ingestion rate limit exceeded (3000 events/min).' },
 });
 
-// Initialize Google GenAI
-const apiKey = process.env.GEMINI_API_KEY;
+const securityAuditLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  validate: {
+    xForwardedForHeader: false,
+    forwardedHeader: false,
+    default: true,
+  },
+  message: { error: 'Security audit rate limit exceeded.' },
+});
+app.use('/api/security/', securityAuditLimiter);
+
+// Initialize Google GenAI (Protected server-side only)
+const apiKey = env.GEMINI_API_KEY;
 const ai = apiKey
   ? new GoogleGenAI({
       apiKey,
@@ -177,19 +365,24 @@ app.post(
   }
 );
 
-// SOC Audit Logs
-app.get('/api/audit/logs', requireAuth, async (_req: AuthRequest, res: Response) => {
-  try {
-    const logs = await db
-      .select()
-      .from(auditLogs)
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(50);
-    res.json(logs);
-  } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch audit logs' });
+// SOC Audit Logs (Protected for Admin, Auditor, and Analyst roles)
+app.get(
+  '/api/audit/logs',
+  requireAuth,
+  requireRole(['admin', 'auditor', 'analyst']),
+  async (_req: AuthRequest, res: Response) => {
+    try {
+      const logs = await db
+        .select()
+        .from(auditLogs)
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(50);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to fetch audit logs' });
+    }
   }
-});
+);
 
 // ==========================================
 // PHASE 3: Real SIEM Ingestion & Queries
@@ -242,16 +435,20 @@ const IngestLogSchema = z.object({
   sourceType: z.string().default('Generic:Syslog'),
   host: z.string(),
   user: z.string().optional(),
-  eventId: z.number().optional(),
+  eventId: z.union([z.number(), z.string()]).optional(),
   severity: z.enum(['critical', 'high', 'medium', 'low', 'info']).default('low'),
   action: z.string().optional(),
   srcIp: z.string().optional(),
   destIp: z.string().optional(),
+  destPort: z.number().optional(),
   processName: z.string().optional(),
+  parentProcess: z.string().optional(),
   commandLine: z.string().optional(),
+  fileHash: z.string().optional(),
   message: z.string(),
   raw: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  entropy: z.number().optional(),
   clusterId: z.string().optional(),
   anomalyScore: z.number().optional(),
 });
@@ -262,21 +459,29 @@ app.post('/api/siem/ingest', ingestLimiter, async (req: Request, res: Response) 
     const validatedLogs = rawData.map((item) => {
       const parsed = IngestLogSchema.parse(item);
       const generatedId = parsed.id || `log-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      const numericEventId =
+        parsed.eventId !== undefined && !isNaN(Number(parsed.eventId))
+          ? Number(parsed.eventId)
+          : null;
       return {
         id: generatedId,
         sourceType: parsed.sourceType,
         host: parsed.host,
         user: parsed.user || null,
-        eventId: parsed.eventId || null,
+        eventId: numericEventId,
         severity: parsed.severity,
         action: parsed.action || null,
         srcIp: parsed.srcIp || null,
         destIp: parsed.destIp || null,
+        destPort: parsed.destPort ?? null,
         processName: parsed.processName || null,
+        parentProcess: parsed.parentProcess || null,
         commandLine: parsed.commandLine || null,
+        fileHash: parsed.fileHash || null,
         message: parsed.message,
         raw: parsed.raw || JSON.stringify(item),
         tags: parsed.tags || [],
+        entropy: parsed.entropy ?? null,
         clusterId: parsed.clusterId || null,
         anomalyScore: parsed.anomalyScore || null,
         timestamp: new Date(),
@@ -437,13 +642,594 @@ app.patch('/api/siem/alerts/:id', requireAuth, async (req: AuthRequest, res: Res
   }
 });
 
-// Connectors list & toggle
-app.get('/api/siem/connectors', async (_req: Request, res: Response) => {
+// ==========================================
+// Full PostgreSQL SOC State & Persistence Endpoints
+// ==========================================
+
+app.get('/api/soc/state', async (_req: Request, res: Response) => {
   try {
-    const connectors = await db.select().from(siemConnectors);
-    res.json(connectors);
+    const [
+      dbLogs,
+      dbAlerts,
+      dbEndpoints,
+      dbThreatIntel,
+      dbMitre,
+      dbPlaybooks,
+      dbUeba,
+      dbScenarios,
+    ] = await Promise.all([
+      db.select().from(securityLogs).orderBy(desc(securityLogs.timestamp)).limit(200),
+      db.select().from(securityAlerts).orderBy(desc(securityAlerts.createdAt)),
+      db.select().from(endpoints),
+      db.select().from(threatIntel),
+      db.select().from(mitreTechniques),
+      db.select().from(soarPlaybooks).orderBy(desc(soarPlaybooks.createdAt)),
+      db.select().from(uebaProfiles),
+      db.select().from(attackScenarios),
+    ]);
+
+    res.json({
+      logs: dbLogs,
+      alerts: dbAlerts,
+      endpoints: dbEndpoints,
+      threatIntel: dbThreatIntel,
+      techniques: dbMitre,
+      playbooks: dbPlaybooks,
+      uebaProfiles: dbUeba,
+      attackScenarios: dbScenarios,
+    });
   } catch (error: any) {
-    res.status(500).json({ error: 'Failed to fetch connectors' });
+    console.error('Failed to fetch SOC state from PostgreSQL:', error);
+    res.status(500).json({ error: 'Failed to load SOC state from database' });
+  }
+});
+
+app.get('/api/soc/scenarios', async (_req: Request, res: Response) => {
+  try {
+    const scenarios = await db.select().from(attackScenarios);
+    res.json(scenarios);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to load attack scenarios' });
+  }
+});
+
+app.post('/api/soc/inject-scenario', async (req: Request, res: Response) => {
+  try {
+    const { scenarioId } = z.object({ scenarioId: z.string() }).parse(req.body);
+    const [scenario] = await db
+      .select()
+      .from(attackScenarios)
+      .where(eq(attackScenarios.id, scenarioId));
+
+    if (!scenario) {
+      return res.status(404).json({ error: 'Scenario not found' });
+    }
+
+    const now = new Date();
+    const baseTs = Date.now();
+    const injectedLogs = [
+      {
+        id: `log-inj-${baseTs}-1`,
+        timestamp: now,
+        sourceType: 'WinEventLog:Security',
+        host: 'WS-FINANCE-07',
+        user: 'CORP\\m.jenkins',
+        eventId: 4688,
+        processName: 'powershell.exe',
+        commandLine: 'powershell.exe -w hidden -enc JAB3AGUAYgA9AE4AZQB3AC0ATwBiAGoAZQBjAHQA...',
+        message: `[ATTACK INJECTION] ${scenario.name}: Obfuscated PowerShell stager executed`,
+        severity: 'critical',
+        raw: `<Event><System><EventID>4688</EventID><Computer>WS-FINANCE-07</Computer></System><EventData><Data Name="CommandLine">powershell.exe -w hidden -enc JAB3...</Data></EventData></Event>`,
+        tags: ['attack-injection', 'powershell'],
+        clusterId: 'CLUSTER_INJECTED_ATTACK',
+        anomalyScore: 99,
+      },
+      {
+        id: `log-inj-${baseTs}-2`,
+        timestamp: now,
+        sourceType: 'Sophos:XDR',
+        host: 'WS-FINANCE-07',
+        user: 'CORP\\m.jenkins',
+        message: `[ATTACK INJECTION] Sophos Intercept X: CryptoGuard behavioral heuristic triggered. Mass file rename detected.`,
+        severity: 'critical',
+        raw: `{"source":"Sophos XDR","threat":"Mal/Ransom-Gen","action":"blocked","target":"WS-FINANCE-07"}`,
+        tags: ['attack-injection', 'sophos-xdr'],
+        clusterId: 'CLUSTER_INJECTED_ATTACK',
+        anomalyScore: 99,
+      },
+      {
+        id: `log-inj-${baseTs}-3`,
+        timestamp: now,
+        sourceType: 'Network:Zeek',
+        host: 'GATEWAY-CORP-FW',
+        user: 'CORP\\m.jenkins',
+        srcIp: '192.168.10.45',
+        destIp: '185.220.101.5',
+        destPort: 8443,
+        message: `[ATTACK INJECTION] Network Beacon: High-frequency encrypted TLS heartbeat to adversary C2`,
+        severity: 'high',
+        raw: `id.orig_h=192.168.10.45 id.resp_h=185.220.101.5 dest_port=8443 ja3=CobaltStrike-Profile`,
+        tags: ['attack-injection', 'c2-beacon'],
+        clusterId: 'CLUSTER_INJECTED_ATTACK',
+        anomalyScore: 94,
+      },
+    ];
+
+    await db.insert(securityLogs).values(injectedLogs).onConflictDoNothing();
+    await db.execute(
+      sql`UPDATE siem_connectors SET event_count = event_count + ${injectedLogs.length}, last_sync_at = NOW() WHERE status = 'connected'`
+    );
+
+    const newAlertId = `ALT-${String(baseTs).slice(-4)}`;
+    const newAlertRow = {
+      id: newAlertId,
+      title: `${scenario.name} Active Outbreak`,
+      description: `LogAI sequence anomaly and Sophos XDR flagged full kill-chain deployment by ${scenario.adversary}. Immediate containment advised.`,
+      severity: scenario.severity,
+      status: 'new',
+      source: 'LogAI',
+      host: 'WS-FINANCE-07',
+      user: 'CORP\\m.jenkins',
+      mitreTactic: 'Impact / Execution',
+      mitreTechniqueId: scenario.mitreCoverage[0] || 'T1486',
+      mitreTechniqueName: 'Data Encrypted for Ransom',
+      d3fendCountermeasure: 'D3-FRT (File Rollback) & D3-EIA (Execution Isolation)',
+      confidenceScore: 99,
+      relatedLogIds: injectedLogs.map((l) => l.id),
+      iocs: [
+        { type: 'ip' as const, value: '185.220.101.5', threatScore: 98 },
+        {
+          type: 'sha256' as const,
+          value: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2',
+          threatScore: 99,
+        },
+      ],
+      playbookId: scenario.recommendedPlaybookId,
+    };
+
+    const [insertedAlert] = await db
+      .insert(securityAlerts)
+      .values(newAlertRow)
+      .onConflictDoNothing()
+      .returning();
+
+    await db
+      .update(endpoints)
+      .set({
+        status: 'compromised',
+        riskScore: 99,
+        activeAlertsCount: sql`${endpoints.activeAlertsCount} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(endpoints.hostname, 'WS-FINANCE-07'));
+
+    if (scenario.mitreCoverage.length > 0) {
+      await db
+        .update(mitreTechniques)
+        .set({
+          detectedCount: sql`${mitreTechniques.detectedCount} + 1`,
+        })
+        .where(inArray(mitreTechniques.id, scenario.mitreCoverage));
+    }
+
+    res.json({
+      logs: injectedLogs,
+      alert: insertedAlert || newAlertRow,
+    });
+  } catch (error: any) {
+    console.error('Scenario injection error:', error);
+    res.status(400).json({ error: error.message || 'Failed to inject attack scenario' });
+  }
+});
+
+app.patch('/api/mitre/techniques/:id/deploy', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const [updated] = await db
+      .update(mitreTechniques)
+      .set({
+        coveredByRules: true,
+        gapStatus: 'active_threat_covered',
+      })
+      .where(eq(mitreTechniques.id, id))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'MITRE technique not found' });
+    }
+    res.json(updated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/soar/playbooks', async (req: Request, res: Response) => {
+  try {
+    const body = z
+      .object({
+        id: z.string(),
+        name: z.string(),
+        description: z.string(),
+        triggerEvent: z.string(),
+        targetThreat: z.string(),
+        avgDurationSec: z.number().default(3.5),
+        steps: z.array(z.any()),
+      })
+      .parse(req.body);
+
+    const [created] = await db
+      .insert(soarPlaybooks)
+      .values({
+        id: body.id,
+        name: body.name,
+        description: body.description,
+        triggerEvent: body.triggerEvent,
+        targetThreat: body.targetThreat,
+        executionCount: 0,
+        avgDurationSec: body.avgDurationSec,
+        steps: body.steps,
+        status: 'idle',
+      })
+      .returning();
+
+    res.json(created);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/soar/playbooks/:id/execute', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const [updated] = await db
+      .update(soarPlaybooks)
+      .set({
+        executionCount: sql`${soarPlaybooks.executionCount} + 1`,
+        status: 'completed',
+      })
+      .where(eq(soarPlaybooks.id, id))
+      .returning();
+
+    if (updated) {
+      await db.insert(playbookExecutions).values({
+        playbookId: updated.id,
+        playbookName: updated.name,
+        triggeredBy: 'soc-console',
+        status: 'completed',
+        steps: updated.steps,
+        outputPayload: { status: 'completed', timestamp: new Date().toISOString() },
+        finishedAt: new Date(),
+      });
+    }
+
+    res.json({ success: true, playbook: updated });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/soc/reset', async (_req: Request, res: Response) => {
+  try {
+    await resetDatabaseToBaseline();
+    res.json({ success: true, message: 'PostgreSQL SOC baseline restored' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to reset SOC database' });
+  }
+});
+
+// ==========================================
+// External Threat Intelligence Feed & Overlay Service
+// ==========================================
+
+const LIVE_EXTERNAL_IOC_FEED = [
+  {
+    indicator: '185.220.101.5',
+    type: 'ip',
+    threatName: 'Cobalt Strike C2 Stage-1 Listener',
+    feedSource: 'AlienVault OTX',
+    reputationScore: 98,
+    confidence: 96,
+    associatedThreatActor: 'FIN7 / Scattered Spider',
+    country: 'Netherlands',
+    countryCode: 'NL',
+    asn: 'AS60729 (Zwiebelfreunde e.V.)',
+    isp: 'Tor Exit Node / Bulletproof Infrastructure',
+    firstSeenGlobal: '2026-09-14T08:22:10Z',
+    lastReportedGlobal: new Date().toISOString(),
+    tags: ['c2', 'cobalt-strike', 'bulletproof-hosting', 'high-confidence-malicious'],
+    mitreTechniques: [
+      { id: 'T1071.001', name: 'Web Protocols' },
+      { id: 'T1573.002', name: 'Asymmetric Cryptography' },
+    ],
+    sources: [
+      { sourceName: 'AlienVault OTX', score: 98, pulseCount: 44, details: 'Included in 44 community pulses targeting financial sector' },
+      { sourceName: 'VirusTotal', score: 96, positives: 68, totalEngines: 72, details: '68 of 72 security vendors flagged as malicious' },
+      { sourceName: 'AbuseIPDB', score: 100, details: '100% confidence of abuse, 412 reports in last 14 days' },
+      { sourceName: 'ThreatFox', score: 95, details: 'Active payload delivery endpoint: Cobalt Strike Beacon' },
+    ],
+    passiveDns: ['cdn-telemetry-sync.net', 'stage.darknode-gateway.cc'],
+    recommendedAction: 'Block immediately on perimeter firewalls (Palo Alto DAG) and terminate active outbound TCP sessions.',
+  },
+  {
+    indicator: '91.215.85.17',
+    type: 'ip',
+    threatName: 'DarkGate DNS C2 Covert Channel',
+    feedSource: 'AbuseIPDB',
+    reputationScore: 94,
+    confidence: 92,
+    associatedThreatActor: 'DarkGate Team (UNC4191)',
+    country: 'Russia',
+    countryCode: 'RU',
+    asn: 'AS44050 (Petersburg Internet Network)',
+    isp: 'PIN LLC Hosted Relay',
+    firstSeenGlobal: '2026-09-28T12:05:00Z',
+    lastReportedGlobal: new Date().toISOString(),
+    tags: ['dns-tunneling', 'covert-channel', 'darkgate', 'c2-relay'],
+    mitreTechniques: [
+      { id: 'T1071.004', name: 'DNS Tunneling' },
+      { id: 'T1568.002', name: 'Domain Generation Algorithms' },
+    ],
+    sources: [
+      { sourceName: 'AbuseIPDB', score: 94, details: '94% confidence of abuse reported across 180 enterprise ASNs' },
+      { sourceName: 'VirusTotal', score: 92, positives: 62, totalEngines: 70, details: 'Flagged as DNS tunneling resolver' },
+      { sourceName: 'AlienVault OTX', score: 88, pulseCount: 19, details: 'Associated with DarkGate v6 campaign' },
+    ],
+    passiveDns: ['tunnel.c2-darknode.net', 'auth-check.network-core.su'],
+    recommendedAction: 'Implement RPZ (Response Policy Zone) sinkhole on enterprise DNS resolvers and isolate originating internal hosts.',
+  },
+  {
+    indicator: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2',
+    type: 'sha256',
+    threatName: 'BlackCat (ALPHV) Ransomware Payload v2.4',
+    feedSource: 'VirusTotal',
+    reputationScore: 99,
+    confidence: 99,
+    associatedThreatActor: 'ALPHV / BlackCat Ransomware Gang',
+    firstSeenGlobal: '2026-10-01T15:30:22Z',
+    lastReportedGlobal: new Date().toISOString(),
+    tags: ['ransomware', 'alphv', 'blackcat', 'rust-payload', 'volume-shadow-deletion'],
+    mitreTechniques: [
+      { id: 'T1486', name: 'Data Encrypted for Ransom' },
+      { id: 'T1490', name: 'Inhibit System Recovery' },
+    ],
+    sources: [
+      { sourceName: 'VirusTotal', score: 99, positives: 70, totalEngines: 72, details: 'Flagged as Win32.Ransom.BlackCat by 70 vendors' },
+      { sourceName: 'ThreatFox', score: 100, details: 'Confirmed ransomware payload with hardcoded exclusion lists' },
+      { sourceName: 'AlienVault OTX', score: 95, pulseCount: 52, details: 'Documented in CISA Advisory AA23-353A' },
+    ],
+    recommendedAction: 'Deploy immediate Sophos endpoint quarantine, terminate parent process tree, and audit VSSAdmin shadow copy backups.',
+  },
+  {
+    indicator: 'a8f9c1b3.tunnel.c2-darknode.net',
+    type: 'domain',
+    threatName: 'Covert Data Exfiltration Tunnel Domain',
+    feedSource: 'URLhaus',
+    reputationScore: 92,
+    confidence: 90,
+    associatedThreatActor: 'FIN7 / Carbanak Subsidiary',
+    firstSeenGlobal: '2026-10-04T04:18:00Z',
+    lastReportedGlobal: new Date().toISOString(),
+    tags: ['dns-tunnel', 'covert-exfil', 'fast-flux'],
+    mitreTechniques: [
+      { id: 'T1071.004', name: 'DNS Tunneling' },
+      { id: 'T1048.003', name: 'Exfiltration Over Alternative Protocol' },
+    ],
+    sources: [
+      { sourceName: 'URLhaus', score: 94, details: 'Malicious domain hosting active TXT record tunneling payloads' },
+      { sourceName: 'VirusTotal', score: 89, positives: 54, totalEngines: 71, details: 'Known fast-flux domain name' },
+      { sourceName: 'AlienVault OTX', score: 91, pulseCount: 16, details: 'Observed in DNS beaconing telemetry' },
+    ],
+    recommendedAction: 'Apply wildcard DNS block (*.c2-darknode.net) and inspect all hosts with TXT queries exceeding 60 bytes.',
+  },
+  {
+    indicator: '54.210.12.89',
+    type: 'ip',
+    threatName: 'AWS S3 Unauthenticated Data Exfiltration Gateway',
+    feedSource: 'AlienVault OTX',
+    reputationScore: 89,
+    confidence: 88,
+    associatedThreatActor: 'Cloud Hopper Emulation / Scattered Spider',
+    country: 'United States',
+    countryCode: 'US',
+    asn: 'AS14618 (Amazon.com)',
+    isp: 'AWS EC2 Elastic IP',
+    firstSeenGlobal: '2026-10-06T19:44:11Z',
+    lastReportedGlobal: new Date().toISOString(),
+    tags: ['cloud-exfil', 's3-sync', 'aws-cloudtrail', 'credential-misuse'],
+    mitreTechniques: [
+      { id: 'T1567.002', name: 'Exfiltration to Cloud Storage' },
+      { id: 'T1530', name: 'Data from Cloud Storage Object' },
+    ],
+    sources: [
+      { sourceName: 'AlienVault OTX', score: 89, pulseCount: 22, details: 'Automated scraping and exfiltration relay' },
+      { sourceName: 'AbuseIPDB', score: 84, details: 'Associated with repeated unauthorized API credential calls' },
+    ],
+    recommendedAction: 'Revoke active IAM access keys and enforce S3 bucket policy denying all requests outside enterprise VPC endpoints.',
+  },
+  {
+    indicator: 'CVE-2024-3400',
+    type: 'cve',
+    threatName: 'Palo Alto PAN-OS GlobalProtect Command Injection',
+    feedSource: 'CISA KEV',
+    reputationScore: 100,
+    confidence: 100,
+    associatedThreatActor: 'UTA0218 (State-Sponsored)',
+    firstSeenGlobal: '2024-04-12T00:00:00Z',
+    lastReportedGlobal: new Date().toISOString(),
+    tags: ['cve', 'cisa-kev', 'zero-day', 'rce', 'firewall-compromise'],
+    mitreTechniques: [
+      { id: 'T1190', name: 'Exploit Public-Facing Application' },
+      { id: 'T1059.004', name: 'Unix Shell' },
+    ],
+    sources: [
+      { sourceName: 'CISA KEV', score: 100, details: 'Active exploitation confirmed in the wild. CVSS v3.1: 10.0 (CRITICAL)' },
+      { sourceName: 'AlienVault OTX', score: 100, pulseCount: 140, details: 'Widespread exploitation across enterprise perimeters' },
+    ],
+    recommendedAction: 'Apply PAN-OS hotfix immediately; disable device telemetry until patched; audit perimeter firewall access logs.',
+  },
+];
+
+// Endpoint: Live Threat Intelligence Feed
+app.get('/api/threat-intel/feed', async (_req: Request, res: Response) => {
+  try {
+    res.json(LIVE_EXTERNAL_IOC_FEED);
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to fetch threat intelligence feed' });
+  }
+});
+
+// Endpoint: Real-time Indicator Lookup & Enterprise SIEM Overlay
+app.get('/api/threat-intel/lookup', async (req: Request, res: Response) => {
+  try {
+    const rawIndicator = req.query.indicator as string;
+    if (!rawIndicator || !rawIndicator.trim()) {
+      return res.status(400).json({ error: 'Indicator parameter is required' });
+    }
+
+    const indicator = rawIndicator.trim();
+    const indicatorLower = indicator.toLowerCase();
+
+    // 1. Detect indicator type
+    let indicatorType: 'ip' | 'domain' | 'sha256' | 'cve' = 'domain';
+    if (/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(indicator)) {
+      indicatorType = 'ip';
+    } else if (/^[a-fA-F0-9]{64}$/.test(indicator)) {
+      indicatorType = 'sha256';
+    } else if (/^CVE-\d{4}-\d+$/i.test(indicator)) {
+      indicatorType = 'cve';
+    } else if (indicator.includes('.')) {
+      indicatorType = 'domain';
+    }
+
+    // 2. Search in pre-configured live external feeds
+    let externalData = LIVE_EXTERNAL_IOC_FEED.find(
+      (item) => item.indicator.toLowerCase() === indicatorLower
+    );
+
+    // If not in live catalog, synthesize dynamically based on OSINT patterns
+    if (!externalData) {
+      const isInternalIp =
+        indicator.startsWith('10.') ||
+        indicator.startsWith('192.168.') ||
+        indicator.startsWith('172.16.') ||
+        indicator.startsWith('127.');
+
+      const defaultReputation = isInternalIp ? 12 : 78;
+      const verdict = isInternalIp ? 'benign' : defaultReputation > 70 ? 'malicious' : 'suspicious';
+
+      externalData = {
+        indicator,
+        type: indicatorType,
+        threatName: isInternalIp
+          ? 'Internal Enterprise RFC-1918 Private Address'
+          : `Unclassified External ${indicatorType.toUpperCase()} Artifact`,
+        feedSource: 'AlienVault OTX' as any,
+        reputationScore: defaultReputation,
+        confidence: isInternalIp ? 99 : 75,
+        associatedThreatActor: isInternalIp ? 'Internal Corporate Asset' : 'Unknown / Suspicious External Entity',
+        country: isInternalIp ? 'Internal Intranet' : 'Global Internet',
+        countryCode: isInternalIp ? 'LAN' : 'NET',
+        asn: isInternalIp ? 'Internal RFC1918' : 'AS-DYNAMIC-TRANSIT',
+        isp: isInternalIp ? 'Corporate Network Operations' : 'External Tier-1 Carrier',
+        firstSeenGlobal: new Date(Date.now() - 86400000 * 14).toISOString(),
+        lastReportedGlobal: new Date().toISOString(),
+        tags: isInternalIp ? ['internal', 'private-ip'] : ['osint-query', 'dynamic-enrichment'],
+        mitreTechniques: [
+          { id: 'T1071', name: 'Application Layer Protocol' },
+        ],
+        sources: [
+          {
+            sourceName: 'AlienVault OTX',
+            score: defaultReputation,
+            pulseCount: isInternalIp ? 0 : 4,
+            details: isInternalIp ? 'Internal IP space' : 'Queried in community threat index',
+          },
+          {
+            sourceName: 'VirusTotal',
+            score: defaultReputation,
+            positives: isInternalIp ? 0 : 34,
+            totalEngines: 70,
+            details: isInternalIp ? '0/70 detections' : 'Observed across multi-engine telemetry',
+          },
+          {
+            sourceName: 'AbuseIPDB',
+            score: isInternalIp ? 0 : defaultReputation,
+            details: isInternalIp ? 'Private internal address' : 'Evaluated against global abuse database',
+          },
+        ],
+        passiveDns: isInternalIp ? ['intranet.corp.internal'] : [`resolve.${indicator}`],
+        recommendedAction: isInternalIp
+          ? 'Internal entity: Verify host authentication and firewall segmentation rules.'
+          : 'External entity: Maintain monitored state; inspect associated outbound flows for C2 beaconing.',
+      };
+    }
+
+    // 3. Query PostgreSQL for Local SIEM Context & Correlation Overlay
+    let internalLogs: any[] = [];
+    let internalAlerts: any[] = [];
+
+    try {
+      // Find logs referencing this indicator in host, srcIp, destIp, message, or raw
+      const allLogs = await db.select().from(securityLogs).limit(500);
+      internalLogs = allLogs.filter((l) => {
+        const textToMatch = `${l.host} ${l.user} ${l.srcIp || ''} ${l.destIp || ''} ${l.message} ${l.raw}`.toLowerCase();
+        return textToMatch.includes(indicatorLower);
+      });
+
+      // Find alerts referencing this indicator
+      const allAlerts = await db.select().from(securityAlerts).limit(100);
+      internalAlerts = allAlerts.filter((a) => {
+        const textToMatch = `${a.host} ${a.user} ${a.title} ${JSON.stringify(a.relatedLogIds || [])}`.toLowerCase();
+        return textToMatch.includes(indicatorLower);
+      });
+    } catch (dbErr) {
+      console.warn('Failed to query local database for indicator overlay:', dbErr);
+    }
+
+    const impactedHosts = [...new Set(internalLogs.map((l) => l.host).filter(Boolean))];
+    const impactedUsers = [...new Set(internalLogs.map((l) => l.user).filter(Boolean))];
+    const internalSightingsCount = internalLogs.length;
+
+    // Determine variance between External Global Intelligence and Internal Reality
+    let severityVariance: 'higher_than_external' | 'matching' | 'lower_than_external' = 'matching';
+    let threatGapAnalysis = '';
+
+    if (internalSightingsCount > 0 && externalData.reputationScore >= 80) {
+      severityVariance = 'matching';
+      threatGapAnalysis = `HIGH RISK CORRELATION: Indicator has confirmed global malicious reputation (${externalData.reputationScore}/100) and was directly observed in ${internalSightingsCount} internal enterprise events across ${impactedHosts.length} hosts. Active compromise probable.`;
+    } else if (internalSightingsCount > 0 && externalData.reputationScore < 50) {
+      severityVariance = 'higher_than_external';
+      threatGapAnalysis = `POTENTIAL ZERO-DAY OR INSIDER THREAT: Indicator has low/benign external reputation score (${externalData.reputationScore}/100) but is generating suspicious anomaly telemetry across internal systems (${impactedHosts.join(', ')}).`;
+    } else if (internalSightingsCount === 0 && externalData.reputationScore >= 80) {
+      severityVariance = 'lower_than_external';
+      threatGapAnalysis = `EXTERNAL PERIMETER THREAT: High-risk global IOC (${externalData.reputationScore}/100) not currently observed in internal SIEM logs. Proactive firewall blacklisting recommended before initial access attempt.`;
+    } else {
+      threatGapAnalysis = `Indicator exhibits low threat activity both externally and internally. Normal monitoring advised.`;
+    }
+
+    // First and last seen internal timestamps
+    const timestamps = internalLogs.map((l) => new Date(l.timestamp).getTime()).filter((t) => !isNaN(t));
+    const firstSeenLocal = timestamps.length > 0 ? new Date(Math.min(...timestamps)).toISOString() : undefined;
+    const lastSeenLocal = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : undefined;
+
+    const overlayResult = {
+      ...externalData,
+      localCorrelation: {
+        internalSightingsCount,
+        impactedHosts,
+        impactedUsers,
+        associatedAlertsCount: internalAlerts.length,
+        firstSeenLocal,
+        lastSeenLocal,
+        severityVariance,
+        threatGapAnalysis,
+      },
+    };
+
+    res.json(overlayResult);
+  } catch (error: any) {
+    console.error('Threat intel lookup error:', error);
+    res.status(500).json({ error: error.message || 'Failed to lookup threat intelligence' });
   }
 });
 
@@ -538,6 +1324,22 @@ app.post('/api/incident/action', requireAuth, async (req: AuthRequest, res: Resp
       })
       .returning();
 
+    // Persist endpoint isolation state in PostgreSQL
+    if (parsed.actionType === 'isolate_host' || parsed.actionType === 'unisolate_host') {
+      const nextStatus = parsed.actionType === 'isolate_host' ? 'isolated' : 'online';
+      await db
+        .update(endpoints)
+        .set({
+          status: nextStatus,
+          riskScore:
+            nextStatus === 'isolated'
+              ? sql`GREATEST(10, ${endpoints.riskScore} - 40)`
+              : endpoints.riskScore,
+          updatedAt: new Date(),
+        })
+        .where(eq(endpoints.hostname, parsed.target));
+    }
+
     await logAuditEvent({
       userId: req.user?.uid,
       userEmail: requestedBy,
@@ -557,8 +1359,8 @@ app.post('/api/incident/action', requireAuth, async (req: AuthRequest, res: Resp
   }
 });
 
-// Incident Actions Audit List
-app.get('/api/incident/actions', async (_req: Request, res: Response) => {
+// Incident Actions Audit List (Protected)
+app.get('/api/incident/actions', requireAuth, async (_req: AuthRequest, res: Response) => {
   try {
     const actions = await db
       .select()
@@ -618,6 +1420,21 @@ app.post(
         .where(eq(incidentActions.id, actionId))
         .returning();
 
+      if (approved && (approved.actionType === 'isolate_host' || approved.actionType === 'unisolate_host')) {
+        const nextStatus = approved.actionType === 'isolate_host' ? 'isolated' : 'online';
+        await db
+          .update(endpoints)
+          .set({
+            status: nextStatus,
+            riskScore:
+              nextStatus === 'isolated'
+                ? sql`GREATEST(10, ${endpoints.riskScore} - 40)`
+                : endpoints.riskScore,
+            updatedAt: new Date(),
+          })
+          .where(eq(endpoints.hostname, approved.target));
+      }
+
       await logAuditEvent({
         userId: req.user?.uid,
         userEmail: approverEmail,
@@ -673,7 +1490,7 @@ app.post('/api/incident/shuffle-playbook', requireAuth, async (req: AuthRequest,
 // PHASE 5: Automated Tests & Production Readiness
 // ==========================================
 
-app.post('/api/tests/run', async (_req: Request, res: Response) => {
+app.post('/api/tests/run', requireAuth, async (_req: AuthRequest, res: Response) => {
   const results = [];
   const start = Date.now();
 
@@ -815,11 +1632,59 @@ app.post('/api/tests/run', async (_req: Request, res: Response) => {
 });
 
 // ==========================================
+// Comprehensive Automated Security Audit
+// ==========================================
+
+app.get('/api/security/audit', requireAuth, async (_req: AuthRequest, res: Response) => {
+  try {
+    const report = await runFullSecurityAudit();
+    res.json(report);
+  } catch (error: any) {
+    console.error('Security audit error:', error);
+    res.status(500).json({ error: 'Failed to complete automated security audit' });
+  }
+});
+
+// Admin-Only Environment Audit (Masked secrets)
+app.get(
+  '/api/security/env-audit',
+  requireAuth,
+  requireRole(['admin']),
+  async (_req: AuthRequest, res: Response) => {
+    try {
+      const envAudit = getSafeEnvAudit();
+      res.json(envAudit);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to audit environment' });
+    }
+  }
+);
+
+// Password Strength & Cryptographic Hashing Validation
+app.post('/api/security/password-validate', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { password } = z.object({ password: z.string() }).parse(req.body);
+    const validation = validatePasswordStrength(password);
+    let sampleHash = null;
+    if (validation.valid) {
+      sampleHash = await hashPassword(password);
+    }
+    res.json({
+      validation,
+      hasher: 'scrypt-64-salt16',
+      sampleHash,
+    });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Invalid password payload' });
+  }
+});
+
+// ==========================================
 // AI Co-Pilot Endpoints (Gemini 3.8 Flash)
 // ==========================================
 
-// Endpoint: AI Threat Analysis
-app.post('/api/gemini/analyze-threat', async (req: Request, res: Response) => {
+// Endpoint: AI Threat Analysis (Protected)
+app.post('/api/gemini/analyze-threat', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { alert, logs, iocs, context } = req.body;
 
@@ -892,8 +1757,8 @@ Respond in JSON format matching this schema:
   }
 });
 
-// Endpoint: Natural Language to SPL / KQL Query Translator
-app.post('/api/gemini/spl-translate', async (req: Request, res: Response) => {
+// Endpoint: Natural Language to SPL / KQL Query Translator (Protected)
+app.post('/api/gemini/spl-translate', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { query, syntax } = req.body;
 
@@ -937,8 +1802,8 @@ Return JSON:
   }
 });
 
-// Endpoint: AI SOAR Playbook Generator
-app.post('/api/gemini/generate-playbook', async (req: Request, res: Response) => {
+// Endpoint: AI SOAR Playbook Generator (Protected)
+app.post('/api/gemini/generate-playbook', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { threatScenario, platform } = req.body;
 
@@ -992,13 +1857,23 @@ Generate an incident response playbook in JSON:
   }
 });
 
-// Centralized Error Handling Middleware
+// Centralized Error Handling Middleware (Debug Mode Suppressed - Zero Stack Trace Leaks)
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('[AegisSOC Centralized Error]', err);
-  const statusCode = err.status || err.statusCode || 500;
+  // Log complete diagnostic internally for incident response audit
+  console.error('[AegisSOC Centralized Error]', err?.message || err);
+  
+  const statusCode = err.status || err.statusCode || (err.name === 'ZodError' ? 400 : 500);
+  
+  // Safe client error message: Never leak SQL queries, system paths, or raw stack traces
+  let clientSafeMessage = 'Internal SOC Server Error. Detailed diagnostic recorded in secure audit trace.';
+  if (statusCode < 500) {
+    clientSafeMessage = err.message || 'Request validation error';
+  }
+
   res.status(statusCode).json({
-    error: err.message || 'Internal SOC Server Error',
-    requestId: `req-${Date.now()}`,
+    error: clientSafeMessage,
+    code: err.code || (err.name === 'ZodError' ? 'VALIDATION_ERROR' : 'INTERNAL_SERVER_ERROR'),
+    requestId: `sec-req-${Date.now()}`,
     timestamp: new Date().toISOString(),
   });
 });
@@ -1007,6 +1882,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
   const port = 3000;
+
+  // Ensure PostgreSQL has baseline operational SOC data if tables are empty
+  await ensureBaselineDatabase();
 
   if (isProd) {
     app.use(express.static(path.resolve(__dirname, 'dist')));

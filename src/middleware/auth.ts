@@ -7,6 +7,10 @@ export interface AuthRequest extends Request {
   user?: DecodedIdToken & { dbRole?: string };
 }
 
+/**
+ * Authentication Middleware:
+ * Validates Firebase Bearer tokens strictly and attaches user identity + verified database role.
+ */
 export const requireAuth = async (
   req: AuthRequest,
   res: Response,
@@ -14,21 +18,31 @@ export const requireAuth = async (
 ) => {
   const authHeader = req.headers.authorization;
 
-  // If no auth token provided, check if in development/demo override
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    // For demo/standalone mode when no token is passed, allow analyst tier with warning
-    if (process.env.ALLOW_ANONYMOUS_SOC === 'true' || !process.env.NODE_ENV || process.env.NODE_ENV === 'development') {
+    // If anonymous access is strictly enabled for preview/demo, grant only limited read-only 'auditor' role
+    // NEVER grant 'admin' to unauthenticated callers!
+    if (process.env.ALLOW_ANONYMOUS_SOC === 'true') {
       req.user = {
-        uid: 'soc-analyst-local',
-        email: 'analyst@corp.internal',
-        dbRole: 'admin', // allow full administrative access in dev/demo
+        uid: 'soc-anonymous-session',
+        email: 'anonymous-auditor@corp.internal',
+        dbRole: 'auditor', // strictly read-only auditor, never admin
       } as any;
       return next();
     }
-    return res.status(401).json({ error: 'Unauthorized: Missing or invalid authorization token' });
+    return res.status(401).json({
+      error: 'Unauthorized: Authentication required. Missing or malformed Bearer token.',
+      code: 'AUTH_REQUIRED',
+    });
   }
 
-  const token = authHeader.split('Bearer ')[1];
+  const token = authHeader.split('Bearer ')[1]?.trim();
+  if (!token) {
+    return res.status(401).json({
+      error: 'Unauthorized: Empty token provided.',
+      code: 'INVALID_TOKEN',
+    });
+  }
+
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
     const dbUser = await getOrCreateUser(
@@ -38,23 +52,40 @@ export const requireAuth = async (
     );
     req.user = {
       ...decodedToken,
-      dbRole: dbUser.role,
+      dbRole: dbUser.role, // role stored in PostgreSQL
     };
     next();
-  } catch (error) {
-    console.error('Error verifying Firebase ID token:', error);
-    return res.status(401).json({ error: 'Unauthorized: Invalid token verification failed' });
+  } catch (error: any) {
+    return res.status(401).json({
+      error: 'Unauthorized: Token verification failed or session expired.',
+      code: 'TOKEN_VERIFICATION_FAILED',
+    });
   }
 };
 
+/**
+ * Role-Based Access Control (RBAC) Guard:
+ * Strictly blocks users who lack the required role.
+ */
 export const requireRole = (allowedRoles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    const role = req.user?.dbRole || 'analyst';
-    if (!allowedRoles.includes(role)) {
-      return res.status(403).json({
-        error: `Forbidden: Operation requires one of roles [${allowedRoles.join(', ')}]. Current role: ${role}`,
+    if (!req.user) {
+      return res.status(401).json({
+        error: 'Unauthorized: Authentication required for this operation.',
+        code: 'AUTH_REQUIRED',
       });
     }
+
+    const role = req.user.dbRole || 'auditor';
+    if (!allowedRoles.includes(role)) {
+      return res.status(403).json({
+        error: `Forbidden: Access restricted. Requires one of [${allowedRoles.join(', ')}]. Current role: ${role}`,
+        code: 'INSUFFICIENT_PERMISSIONS',
+        requiredRoles: allowedRoles,
+        userRole: role,
+      });
+    }
+
     next();
   };
 };

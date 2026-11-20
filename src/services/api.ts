@@ -1,4 +1,14 @@
-import { SecurityAlert, SecurityLog } from '../types/soc.ts';
+import {
+  SecurityAlert,
+  SecurityLog,
+  ExternalThreatIntelOverlay,
+  EndpointHost,
+  ThreatIntelligenceItem,
+  MitreTechnique,
+  SoarPlaybook,
+  UebaProfile,
+  AttackScenario,
+} from '../types/soc.ts';
 
 // Token accessor function configured by AuthContext
 let getAuthToken: (() => Promise<string | null>) | null = null;
@@ -143,6 +153,55 @@ export async function runProductionTests(): Promise<TestSuiteReport> {
 // SIEM Data APIs (PostgreSQL Persisted)
 // ----------------------------------------
 
+function mapDbLog(d: any): SecurityLog {
+  return {
+    id: d.id,
+    timestamp: typeof d.timestamp === 'string' ? d.timestamp : new Date(d.timestamp).toISOString(),
+    sourceType: d.sourceType,
+    host: d.host,
+    user: d.user || 'SYSTEM',
+    eventId: d.eventId || undefined,
+    severity: d.severity,
+    srcIp: d.srcIp || undefined,
+    destIp: d.destIp || undefined,
+    destPort: d.destPort || undefined,
+    processName: d.processName || undefined,
+    parentProcess: d.parentProcess || undefined,
+    commandLine: d.commandLine || undefined,
+    fileHash: d.fileHash || undefined,
+    message: d.message,
+    raw: d.raw,
+    entropy: typeof d.entropy === 'number' ? d.entropy : undefined,
+    clusterId: d.clusterId || undefined,
+    anomalyScore: d.anomalyScore || undefined,
+  };
+}
+
+function mapDbAlert(a: any): SecurityAlert {
+  return {
+    id: a.id,
+    title: a.title,
+    description: a.description || a.title,
+    severity: a.severity,
+    status: a.status,
+    source: a.source,
+    endpoint: a.host || 'DC-CORP-01',
+    host: a.host || 'DC-CORP-01',
+    user: a.user || 'SYSTEM',
+    mitreTactic: a.mitreTactic,
+    mitreTechniqueId: a.mitreTechniqueId,
+    mitreTechniqueName: a.mitreTechniqueName,
+    d3fendCountermeasure: a.d3fendCountermeasure,
+    confidenceScore: a.confidenceScore || 85,
+    detectedAt: a.createdAt,
+    timestamp: a.createdAt,
+    relatedLogIds: Array.isArray(a.relatedLogIds) ? a.relatedLogIds : [],
+    iocs: Array.isArray(a.iocs) ? a.iocs : [],
+    playbookId: a.playbookId || undefined,
+    aiAnalysis: a.aiAnalysis || undefined,
+  };
+}
+
 export async function fetchSiemLogs(params?: {
   source?: string;
   severity?: string;
@@ -158,25 +217,7 @@ export async function fetchSiemLogs(params?: {
   const res = await fetch(`/api/siem/logs?${query.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch logs: HTTP ${res.status}`);
   const data = await res.json();
-  return data.map((d: any) => ({
-    id: d.id,
-    timestamp: typeof d.timestamp === 'string' ? d.timestamp : new Date(d.timestamp).toISOString(),
-    sourceType: d.sourceType,
-    host: d.host,
-    user: d.user || undefined,
-    eventId: d.eventId || undefined,
-    severity: d.severity,
-    action: d.action || undefined,
-    srcIp: d.srcIp || undefined,
-    destIp: d.destIp || undefined,
-    processName: d.processName || undefined,
-    commandLine: d.commandLine || undefined,
-    message: d.message,
-    raw: d.raw,
-    tags: Array.isArray(d.tags) ? d.tags : [],
-    clusterId: d.clusterId || undefined,
-    anomalyScore: d.anomalyScore || undefined,
-  }));
+  return data.map(mapDbLog);
 }
 
 export async function ingestSiemLog(log: Partial<SecurityLog>): Promise<{ success: boolean; count: number }> {
@@ -200,27 +241,7 @@ export async function fetchSecurityAlerts(): Promise<SecurityAlert[]> {
   const res = await fetch('/api/siem/alerts');
   if (!res.ok) throw new Error(`Failed to fetch alerts: HTTP ${res.status}`);
   const data = await res.json();
-  return data.map((a: any) => ({
-    id: a.id,
-    title: a.title,
-    description: a.title,
-    severity: a.severity,
-    status: a.status,
-    source: a.source,
-    endpoint: a.host || 'DC-CORP-01',
-    host: a.host || 'DC-CORP-01',
-    user: a.user || 'SYSTEM',
-    mitreTactic: a.mitreTactic,
-    mitreTechniqueId: a.mitreTechniqueId,
-    mitreTechniqueName: a.mitreTechniqueName,
-    d3fendCountermeasure: a.d3fendCountermeasure,
-    confidenceScore: a.confidenceScore || 85,
-    detectedAt: a.createdAt,
-    timestamp: a.createdAt,
-    relatedLogIds: Array.isArray(a.relatedLogIds) ? a.relatedLogIds : [],
-    iocs: Array.isArray(a.iocs) ? a.iocs : [],
-    aiAnalysis: a.aiAnalysis || undefined,
-  }));
+  return data.map(mapDbAlert);
 }
 
 export async function updateAlertStatus(
@@ -241,6 +262,23 @@ export async function updateAlertStatus(
 export async function fetchSiemConnectors(): Promise<any[]> {
   const res = await fetch('/api/siem/connectors');
   if (!res.ok) throw new Error(`Failed to fetch connectors: HTTP ${res.status}`);
+  return await res.json();
+}
+
+// ----------------------------------------
+// External Threat Intelligence Feed & Lookup
+// ----------------------------------------
+
+export async function fetchLiveThreatIntelFeed(): Promise<any[]> {
+  const res = await fetch('/api/threat-intel/feed');
+  if (!res.ok) throw new Error(`Failed to fetch threat intel feed: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function lookupThreatIntel(indicator: string): Promise<ExternalThreatIntelOverlay> {
+  const query = new URLSearchParams({ indicator });
+  const res = await fetch(`/api/threat-intel/lookup?${query.toString()}`);
+  if (!res.ok) throw new Error(`Threat intel lookup failed: HTTP ${res.status}`);
   return await res.json();
 }
 
@@ -413,4 +451,132 @@ export async function generatePlaybookWithGemini(
       ],
     };
   }
+}
+
+export interface SecurityAuditItem {
+  id: string;
+  category: string;
+  check: string;
+  status: 'PASSED' | 'WARNING' | 'FAILED';
+  details: string;
+  remediation?: string;
+}
+
+export interface SecurityAuditReport {
+  overallStatus: 'SECURE' | 'ACTION_REQUIRED';
+  securityScore: number;
+  passedChecks: number;
+  totalChecks: number;
+  auditedAt: string;
+  environment: Record<string, any>;
+  checks: SecurityAuditItem[];
+}
+
+export async function fetchSecurityAuditReport(): Promise<SecurityAuditReport> {
+  const headers = await getHeaders();
+  const res = await fetch('/api/security/audit', { headers });
+  if (!res.ok) throw new Error(`Security audit failed with status ${res.status}`);
+  return await res.json();
+}
+
+export async function validatePasswordEntropy(password: string) {
+  const headers = await getHeaders();
+  const res = await fetch('/api/security/password-validate', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) throw new Error(`Password validation failed with status ${res.status}`);
+  return await res.json();
+}
+
+export async function fetchEnvAudit() {
+  const headers = await getHeaders();
+  const res = await fetch('/api/security/env-audit', { headers });
+  if (!res.ok) throw new Error(`Env audit failed with status ${res.status}`);
+  return await res.json();
+}
+
+export interface SocDatabaseState {
+  logs: SecurityLog[];
+  alerts: SecurityAlert[];
+  endpoints: EndpointHost[];
+  threatIntel: ThreatIntelligenceItem[];
+  techniques: MitreTechnique[];
+  playbooks: SoarPlaybook[];
+  uebaProfiles: UebaProfile[];
+  attackScenarios: AttackScenario[];
+}
+
+export async function fetchSocState(): Promise<SocDatabaseState> {
+  const res = await fetch('/api/soc/state');
+  if (!res.ok) throw new Error(`Failed to fetch SOC database state: HTTP ${res.status}`);
+  const data = await res.json();
+  return {
+    logs: (data.logs || []).map(mapDbLog),
+    alerts: (data.alerts || []).map(mapDbAlert),
+    endpoints: data.endpoints || [],
+    threatIntel: data.threatIntel || [],
+    techniques: data.techniques || [],
+    playbooks: data.playbooks || [],
+    uebaProfiles: data.uebaProfiles || [],
+    attackScenarios: data.attackScenarios || [],
+  };
+}
+
+export async function injectAttackScenario(
+  scenarioId: string
+): Promise<{ logs: SecurityLog[]; alert: SecurityAlert }> {
+  const headers = await getHeaders();
+  const res = await fetch('/api/soc/inject-scenario', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ scenarioId }),
+  });
+  if (!res.ok) throw new Error(`Scenario injection failed: HTTP ${res.status}`);
+  const data = await res.json();
+  return {
+    logs: (data.logs || []).map(mapDbLog),
+    alert: mapDbAlert(data.alert),
+  };
+}
+
+export async function deployMitreCountermeasure(techniqueId: string): Promise<MitreTechnique> {
+  const headers = await getHeaders();
+  const res = await fetch(`/api/mitre/techniques/${encodeURIComponent(techniqueId)}/deploy`, {
+    method: 'PATCH',
+    headers,
+  });
+  if (!res.ok) throw new Error(`Deploy countermeasure failed: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function saveSoarPlaybook(playbook: SoarPlaybook): Promise<SoarPlaybook> {
+  const headers = await getHeaders();
+  const res = await fetch('/api/soar/playbooks', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(playbook),
+  });
+  if (!res.ok) throw new Error(`Save playbook failed: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function executeSoarPlaybook(playbookId: string): Promise<{ success: boolean; playbook?: SoarPlaybook }> {
+  const headers = await getHeaders();
+  const res = await fetch(`/api/soar/playbooks/${encodeURIComponent(playbookId)}/execute`, {
+    method: 'POST',
+    headers,
+  });
+  if (!res.ok) throw new Error(`Execute playbook failed: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function resetSocDatabase(): Promise<void> {
+  const headers = await getHeaders();
+  const res = await fetch('/api/soc/reset', {
+    method: 'POST',
+    headers,
+  });
+  if (!res.ok) throw new Error(`SOC database reset failed: HTTP ${res.status}`);
 }

@@ -1,37 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Flame,
   Zap,
-  ShieldAlert,
-  ArrowRight,
-  Server,
-  Terminal,
-  Activity,
-  Layers,
-  Check,
 } from 'lucide-react';
 import { AttackScenario } from '../types/soc.ts';
-import { ATTACK_SCENARIOS } from '../data/mockData.ts';
 
 interface InjectScenarioModalProps {
   isOpen: boolean;
+  scenarios: AttackScenario[];
   onClose: () => void;
   onInject: (scenario: AttackScenario) => void;
 }
 
 export const InjectScenarioModal: React.FC<InjectScenarioModalProps> = ({
   isOpen,
+  scenarios,
   onClose,
   onInject,
 }) => {
-  if (!isOpen) return null;
-
-  const [selectedScenario, setSelectedScenario] = useState<AttackScenario>(
-    ATTACK_SCENARIOS[0]
-  );
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>('');
   const [isInjecting, setIsInjecting] = useState(false);
 
+  useEffect(() => {
+    if (scenarios.length > 0 && !scenarios.some((s) => s.id === selectedScenarioId)) {
+      setSelectedScenarioId(scenarios[0].id);
+    }
+  }, [scenarios, selectedScenarioId]);
+
+  if (!isOpen) return null;
+
+  const selectedScenario =
+    scenarios.find((s) => s.id === selectedScenarioId) || scenarios[0];
+
   const handleExecuteInjection = () => {
+    if (!selectedScenario) return;
     setIsInjecting(true);
     setTimeout(() => {
       onInject(selectedScenario);
@@ -57,76 +59,82 @@ export const InjectScenarioModal: React.FC<InjectScenarioModalProps> = ({
         </div>
 
         <p className="text-slate-600 dark:text-slate-400 text-xs">
-          Select a realistic enterprise cyber intrusion scenario to simulate. Injecting will flood the SIEM with multi-stage telemetry, trigger LogAI &amp; Alkido anomaly detection, alert Sophos XDR, and light up the MITRE ATT&amp;CK matrix.
+          Select an enterprise cyber intrusion scenario stored in PostgreSQL to execute. Injecting will persist multi-stage telemetry, trigger LogAI &amp; Alkido anomaly detection, alert Sophos XDR, and update the MITRE ATT&amp;CK matrix.
         </p>
 
-        {/* Scenario Selection Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {ATTACK_SCENARIOS.map((sc) => {
-            const isSelected = selectedScenario.id === sc.id;
+        {!selectedScenario ? (
+          <div className="p-6 text-center text-slate-500">Loading scenarios from PostgreSQL...</div>
+        ) : (
+          <>
+            {/* Scenario Selection Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {scenarios.map((sc) => {
+                const isSelected = selectedScenario.id === sc.id;
 
-            return (
-              <div
-                key={sc.id}
-                onClick={() => setSelectedScenario(sc)}
-                className={`p-3 rounded-lg border cursor-pointer transition space-y-2 ${
-                  isSelected
-                    ? 'bg-red-50 dark:bg-red-950/40 border-red-500 ring-1 ring-red-500'
-                    : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] px-1.5 py-0.2 rounded font-bold uppercase bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800">
-                    {sc.severity}
-                  </span>
-                  <Flame className="w-4 h-4 text-red-500" />
-                </div>
-                <div className="font-bold text-xs text-slate-900 dark:text-slate-200">{sc.name}</div>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400">Actor: {sc.adversary}</div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Selected Scenario Kill Chain Breakdown */}
-        <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 space-y-3 transition-colors">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-2">
-            <div>
-              <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">{selectedScenario.name}</span>
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">{selectedScenario.description}</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              SIMULATED KILL CHAIN STAGES:
-            </span>
-
-            <div className="space-y-2">
-              {selectedScenario.attackChainSteps.map((step, idx) => (
-                <div
-                  key={idx}
-                  className="p-2.5 rounded bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-cyan-800 dark:text-cyan-300 flex items-center justify-center font-bold text-[10px]">
-                      {idx + 1}
-                    </span>
-                    <div>
-                      <div className="text-xs font-semibold text-slate-900 dark:text-slate-200">
-                        {step.stage} • <span className="text-cyan-700 dark:text-cyan-400">{step.technique}</span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">{step.action}</div>
+                return (
+                  <div
+                    key={sc.id}
+                    onClick={() => setSelectedScenarioId(sc.id)}
+                    className={`p-3 rounded-lg border cursor-pointer transition space-y-2 ${
+                      isSelected
+                        ? 'bg-red-50 dark:bg-red-950/40 border-red-500 ring-1 ring-red-500'
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] px-1.5 py-0.2 rounded font-bold uppercase bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800">
+                        {sc.severity}
+                      </span>
+                      <Flame className="w-4 h-4 text-red-500" />
                     </div>
+                    <div className="font-bold text-xs text-slate-900 dark:text-slate-200">{sc.name}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">Actor: {sc.adversary}</div>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 whitespace-nowrap">
-                    {step.detectionSource}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
-        </div>
+
+            {/* Selected Scenario Kill Chain Breakdown */}
+            <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-850 space-y-3 transition-colors">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-900 pb-2">
+                <div>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 text-xs">{selectedScenario.name}</span>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">{selectedScenario.description}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  KILL CHAIN STAGES:
+                </span>
+
+                <div className="space-y-2">
+                  {selectedScenario.attackChainSteps.map((step, idx) => (
+                    <div
+                      key={idx}
+                      className="p-2.5 rounded bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-cyan-800 dark:text-cyan-300 flex items-center justify-center font-bold text-[10px]">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <div className="text-xs font-semibold text-slate-900 dark:text-slate-200">
+                            {step.stage} • <span className="text-cyan-700 dark:text-cyan-400">{step.technique}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">{step.action}</div>
+                        </div>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 whitespace-nowrap">
+                        {step.detectionSource}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
@@ -139,8 +147,8 @@ export const InjectScenarioModal: React.FC<InjectScenarioModalProps> = ({
 
           <button
             onClick={handleExecuteInjection}
-            disabled={isInjecting}
-            className="px-5 py-2 rounded bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs flex items-center gap-2 shadow-[0_0_15px_rgba(225,29,72,0.4)] transition cursor-pointer"
+            disabled={isInjecting || !selectedScenario}
+            className="px-5 py-2 rounded bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 shadow-[0_0_15px_rgba(225,29,72,0.4)] transition cursor-pointer"
           >
             <Zap className="w-4 h-4" />
             <span>{isInjecting ? 'Injecting Telemetry...' : 'INJECT LIVE ATTACK INTO SOC'}</span>

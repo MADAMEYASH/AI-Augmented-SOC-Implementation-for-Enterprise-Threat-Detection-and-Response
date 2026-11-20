@@ -12,16 +12,6 @@ import { InjectScenarioModal } from './components/InjectScenarioModal.tsx';
 import { ProductionOpsModal } from './components/ProductionOpsModal.tsx';
 
 import {
-  INITIAL_LOGS,
-  INITIAL_ALERTS,
-  INITIAL_THREAT_INTEL,
-  INITIAL_ENDPOINTS,
-  INITIAL_MITRE_TECHNIQUES,
-  INITIAL_PLAYBOOKS,
-  INITIAL_UEBA_PROFILES,
-} from './data/mockData.ts';
-
-import {
   SecurityLog,
   SecurityAlert,
   ThreatIntelligenceItem,
@@ -33,12 +23,14 @@ import {
 } from './types/soc.ts';
 
 import {
-  fetchSiemLogs,
-  fetchSecurityAlerts,
+  fetchSocState,
   fetchSiemStats,
   ingestSiemLog,
   updateAlertStatus,
   executeIncidentAction,
+  injectAttackScenario,
+  deployMitreCountermeasure,
+  resetSocDatabase,
 } from './services/api.ts';
 
 // Cyber acoustic synthesizer
@@ -87,16 +79,18 @@ function playAlertTone(type: 'warning' | 'success' | 'inject') {
 function SocInnerApp() {
   const { isSimulatedMode } = useAuth();
   const [activeTab, setActiveTab] = useState<string>('siem');
-  const [logs, setLogs] = useState<SecurityLog[]>(INITIAL_LOGS);
-  const [alerts, setAlerts] = useState<SecurityAlert[]>(INITIAL_ALERTS);
-  const [threatIntel] = useState<ThreatIntelligenceItem[]>(INITIAL_THREAT_INTEL);
-  const [endpoints, setEndpoints] = useState<EndpointHost[]>(INITIAL_ENDPOINTS);
-  const [techniques, setTechniques] = useState<MitreTechnique[]>(INITIAL_MITRE_TECHNIQUES);
-  const [playbooks, setPlaybooks] = useState<SoarPlaybook[]>(INITIAL_PLAYBOOKS);
-  const [uebaProfiles] = useState<UebaProfile[]>(INITIAL_UEBA_PROFILES);
+  const [logs, setLogs] = useState<SecurityLog[]>([]);
+  const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
+  const [threatIntel, setThreatIntel] = useState<ThreatIntelligenceItem[]>([]);
+  const [endpoints, setEndpoints] = useState<EndpointHost[]>([]);
+  const [techniques, setTechniques] = useState<MitreTechnique[]>([]);
+  const [playbooks, setPlaybooks] = useState<SoarPlaybook[]>([]);
+  const [uebaProfiles, setUebaProfiles] = useState<UebaProfile[]>([]);
+  const [attackScenarios, setAttackScenarios] = useState<AttackScenario[]>([]);
+  const [isLoadingDb, setIsLoadingDb] = useState<boolean>(true);
 
   // Live telemetry state
-  const [eps, setEps] = useState<number>(94);
+  const [eps, setEps] = useState<number>(24);
   const [isStreaming, setIsStreaming] = useState<boolean>(true);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
@@ -137,29 +131,31 @@ function SocInnerApp() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Synchronize initial real data from PostgreSQL backend
-  useEffect(() => {
-    async function loadBackendData() {
-      try {
-        const [dbLogs, dbAlerts, stats] = await Promise.all([
-          fetchSiemLogs({ limit: 100 }),
-          fetchSecurityAlerts(),
-          fetchSiemStats(),
-        ]);
-        if (dbLogs.length > 0) {
-          setLogs(dbLogs);
-        }
-        if (dbAlerts.length > 0) {
-          setAlerts(dbAlerts);
-        }
-        if (stats.eps) {
-          setEps(stats.eps);
-        }
-      } catch (err) {
-        console.warn('Backend sync initialized with fallback telemetry:', err);
+  // Load all real SOC data directly from Cloud SQL PostgreSQL
+  const loadDatabaseState = async () => {
+    try {
+      const [dbState, stats] = await Promise.all([fetchSocState(), fetchSiemStats()]);
+      setLogs(dbState.logs);
+      setAlerts(dbState.alerts);
+      setEndpoints(dbState.endpoints);
+      setThreatIntel(dbState.threatIntel);
+      setTechniques(dbState.techniques);
+      setPlaybooks(dbState.playbooks);
+      setUebaProfiles(dbState.uebaProfiles);
+      setAttackScenarios(dbState.attackScenarios);
+      if (stats.eps) {
+        setEps(stats.eps);
       }
+    } catch (err) {
+      console.error('Failed to load SOC state from PostgreSQL:', err);
+      setBannerNotice('Database connection error: Unable to load live telemetry from PostgreSQL.');
+    } finally {
+      setIsLoadingDb(false);
     }
-    loadBackendData();
+  };
+
+  useEffect(() => {
+    loadDatabaseState();
   }, []);
 
   // Periodic real stats & event rate sync
@@ -277,124 +273,31 @@ function SocInnerApp() {
   };
 
   // Attack Scenario injection
+  // Attack Scenario injection persisted in PostgreSQL
   const handleInjectScenario = async (scenario: AttackScenario) => {
     if (soundEnabled) playAlertTone('inject');
 
-    const now = new Date().toISOString().replace('T', ' ').slice(0, 23);
-
-    const injectedLogs: SecurityLog[] = [
-      {
-        id: `log-inj-${Date.now()}-1`,
-        timestamp: now,
-        sourceType: 'WinEventLog:Security',
-        host: 'WS-FINANCE-07',
-        user: 'CORP\\m.jenkins',
-        eventId: 4688,
-        processName: 'powershell.exe',
-        commandLine: 'powershell.exe -w hidden -enc JAB3AGUAYgA9AE4AZQB3AC0ATwBiAGoAZQBjAHQA...',
-        message: `[ATTACK INJECTION] ${scenario.name}: Obfuscated PowerShell stager executed`,
-        severity: 'critical',
-        raw: `<Event><System><EventID>4688</EventID><Computer>WS-FINANCE-07</Computer></System><EventData><Data Name="CommandLine">powershell.exe -w hidden -enc JAB3...</Data></EventData></Event>`,
-        clusterId: 'CLUSTER_INJECTED_ATTACK',
-        anomalyScore: 99,
-      },
-      {
-        id: `log-inj-${Date.now()}-2`,
-        timestamp: now,
-        sourceType: 'Sophos:XDR',
-        host: 'WS-FINANCE-07',
-        user: 'CORP\\m.jenkins',
-        message: `[ATTACK INJECTION] Sophos Intercept X: CryptoGuard behavioral heuristic triggered. Mass file rename detected.`,
-        severity: 'critical',
-        raw: `{"source":"Sophos XDR","threat":"Mal/Ransom-Gen","action":"blocked","target":"WS-FINANCE-07"}`,
-        clusterId: 'CLUSTER_INJECTED_ATTACK',
-        anomalyScore: 99,
-      },
-      {
-        id: `log-inj-${Date.now()}-3`,
-        timestamp: now,
-        sourceType: 'Network:Zeek',
-        host: 'GATEWAY-CORP-FW',
-        user: 'CORP\\m.jenkins',
-        srcIp: '192.168.10.45',
-        destIp: '185.220.101.5',
-        destPort: 8443,
-        message: `[ATTACK INJECTION] Network Beacon: High-frequency encrypted TLS heartbeat to adversary C2`,
-        severity: 'high',
-        raw: `id.orig_h=192.168.10.45 id.resp_h=185.220.101.5 dest_port=8443 ja3=CobaltStrike-Profile`,
-        clusterId: 'CLUSTER_INJECTED_ATTACK',
-        anomalyScore: 94,
-      },
-    ];
-
-    setLogs((prev) => [...injectedLogs, ...prev]);
-
-    // Persist to PostgreSQL backend
-    for (const l of injectedLogs) {
-      ingestSiemLog(l).catch(() => {});
+    try {
+      const result = await injectAttackScenario(scenario.id);
+      await loadDatabaseState();
+      setBannerNotice(`ATTACK INJECTED: Telemetry for "${scenario.name}" persisted to PostgreSQL.`);
+      if (result.alert) {
+        setSelectedAlertForDetail(result.alert);
+      }
+    } catch (err: any) {
+      setBannerNotice(`Scenario injection failed: ${err.message}`);
     }
-
-    // Create correlated high-severity alert
-    const newAlert: SecurityAlert = {
-      id: `ALT-${Date.now().toString().slice(-4)}`,
-      title: `${scenario.name} Active Outbreak`,
-      description: `LogAI sequence anomaly and Sophos XDR flagged full kill-chain deployment by ${scenario.adversary}. Immediate containment advised.`,
-      severity: scenario.severity,
-      status: 'new',
-      source: 'LogAI',
-      endpoint: 'WS-FINANCE-07',
-      host: 'WS-FINANCE-07',
-      user: 'CORP\\m.jenkins',
-      mitreTactic: 'Impact / Execution',
-      mitreTechniqueId: scenario.mitreCoverage[0] || 'T1486',
-      mitreTechniqueName: 'Data Encrypted for Ransom',
-      d3fendCountermeasure: 'D3-FRT (File Rollback) & D3-EIA (Execution Isolation)',
-      confidenceScore: 99,
-      detectedAt: now,
-      relatedLogIds: injectedLogs.map((l) => l.id),
-      iocs: [
-        { type: 'ip', value: '185.220.101.5', threatScore: 98 },
-        { type: 'sha256', value: '8f4c2e6b91a7d3f048e5b6c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2', threatScore: 99 },
-      ],
-    };
-
-    setAlerts((prev) => [newAlert, ...prev]);
-
-    // Mark host as compromised
-    setEndpoints((prev) =>
-      prev.map((h) =>
-        h.hostname === 'WS-FINANCE-07'
-          ? { ...h, status: 'compromised', riskScore: 99, activeAlertsCount: h.activeAlertsCount + 1 }
-          : h
-      )
-    );
-
-    // Light up MITRE techniques
-    setTechniques((prev) =>
-      prev.map((t) => {
-        if (scenario.mitreCoverage.includes(t.id)) {
-          return {
-            ...t,
-            detectedCount: t.detectedCount + 1,
-            gapStatus: t.gapStatus === 'uncovered_gap' ? 'uncovered_gap' : 'active_threat_covered',
-          };
-        }
-        return t;
-      })
-    );
-
-    setBannerNotice(`🚨 ATTACK INJECTED: Ingested telemetry for "${scenario.name}". Persisted to PostgreSQL.`);
-    setSelectedAlertForDetail(newAlert);
   };
 
-  // Reset SOC state
-  const handleResetSoc = () => {
-    setLogs(INITIAL_LOGS);
-    setAlerts(INITIAL_ALERTS);
-    setEndpoints(INITIAL_ENDPOINTS);
-    setTechniques(INITIAL_MITRE_TECHNIQUES);
-    setPlaybooks(INITIAL_PLAYBOOKS);
-    setBannerNotice('SOC state reset to baseline enterprise environment.');
+  // Reset SOC state in PostgreSQL and reload
+  const handleResetSoc = async () => {
+    try {
+      await resetSocDatabase();
+      await loadDatabaseState();
+      setBannerNotice('PostgreSQL SOC baseline restored and reloaded.');
+    } catch (err: any) {
+      setBannerNotice(`Failed to reset SOC database: ${err.message}`);
+    }
   };
 
   return (
@@ -432,65 +335,83 @@ function SocInnerApp() {
 
       {/* Main Operational Views */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
-        {activeTab === 'siem' && (
-          <SiemLogsView
-            logs={logs}
-            onPivotToHunting={handlePivotToHunting}
-            onInjectCustomLog={(newLog) => {
-              setLogs((prev) => [newLog, ...prev]);
-              ingestSiemLog(newLog).catch(() => {});
-            }}
-          />
-        )}
+        {isLoadingDb ? (
+          <div className="p-12 text-center font-mono text-xs text-slate-500">
+            Connecting to Cloud SQL PostgreSQL and loading live SOC telemetry...
+          </div>
+        ) : (
+          <>
+            {activeTab === 'siem' && (
+              <SiemLogsView
+                logs={logs}
+                onPivotToHunting={handlePivotToHunting}
+                onInjectCustomLog={(newLog) => {
+                  setLogs((prev) => [newLog, ...prev]);
+                  ingestSiemLog(newLog).catch(() => {});
+                }}
+              />
+            )}
 
-        {activeTab === 'ai-detection' && (
-          <AiAnomalyEngineView
-            logs={logs}
-            threatIntel={threatIntel}
-            uebaProfiles={uebaProfiles}
-            onPivotToHunting={handlePivotToHunting}
-          />
-        )}
+            {activeTab === 'ai-detection' && (
+              <AiAnomalyEngineView
+                logs={logs}
+                threatIntel={threatIntel}
+                uebaProfiles={uebaProfiles}
+                onPivotToHunting={handlePivotToHunting}
+              />
+            )}
 
-        {activeTab === 'threat-hunting' && (
-          <ThreatHuntingView
-            logs={logs}
-            alerts={alerts}
-            threatIntel={threatIntel}
-            initialPivotQuery={huntingPivotTerm}
-            onSelectAlert={(a) => setSelectedAlertForDetail(a)}
-            onExecutePlaybook={handleExecutePlaybookFromAlert}
-            onIsolateHost={handleToggleIsolation}
-          />
-        )}
+            {activeTab === 'threat-hunting' && (
+              <ThreatHuntingView
+                logs={logs}
+                alerts={alerts}
+                threatIntel={threatIntel}
+                initialPivotQuery={huntingPivotTerm}
+                onSelectAlert={(a) => setSelectedAlertForDetail(a)}
+                onExecutePlaybook={handleExecutePlaybookFromAlert}
+                onIsolateHost={handleToggleIsolation}
+              />
+            )}
 
-        {activeTab === 'xdr-endpoint' && (
-          <XdrEndpointView
-            endpoints={endpoints}
-            onToggleIsolation={handleToggleIsolation}
-            onPivotToHunting={handlePivotToHunting}
-          />
-        )}
+            {activeTab === 'xdr-endpoint' && (
+              <XdrEndpointView
+                endpoints={endpoints}
+                onToggleIsolation={handleToggleIsolation}
+                onPivotToHunting={handlePivotToHunting}
+              />
+            )}
 
-        {activeTab === 'mitre-d3fend' && (
-          <MitreMatrixView
-            techniques={techniques}
-            onDeployCountermeasure={(techId) => {
-              setBannerNotice(`MITRE D3FEND: Automated defensive countermeasure deployed for technique ${techId}.`);
-              if (soundEnabled) playAlertTone('success');
-            }}
-            onPivotToHunting={handlePivotToHunting}
-          />
-        )}
+            {activeTab === 'mitre-d3fend' && (
+              <MitreMatrixView
+                techniques={techniques}
+                onDeployCountermeasure={async (techId) => {
+                  try {
+                    const updated = await deployMitreCountermeasure(techId);
+                    setTechniques((prev) =>
+                      prev.map((t) => (t.id === techId ? updated : t))
+                    );
+                    setBannerNotice(
+                      `MITRE D3FEND: Automated countermeasure deployed for ${techId} and persisted in PostgreSQL.`
+                    );
+                    if (soundEnabled) playAlertTone('success');
+                  } catch (err: any) {
+                    setBannerNotice(`Failed to deploy countermeasure: ${err.message}`);
+                  }
+                }}
+                onPivotToHunting={handlePivotToHunting}
+              />
+            )}
 
-        {activeTab === 'soar-playbooks' && (
-          <SoarPlaybooksView
-            playbooks={playbooks}
-            onPlaybookComplete={(pbId) => {
-              setBannerNotice(`Shuffle SOAR: Playbook ${pbId} execution completed.`);
-              if (soundEnabled) playAlertTone('success');
-            }}
-          />
+            {activeTab === 'soar-playbooks' && (
+              <SoarPlaybooksView
+                playbooks={playbooks}
+                onPlaybookComplete={(pbId) => {
+                  setBannerNotice(`Shuffle SOAR: Playbook ${pbId} execution completed and logged to PostgreSQL.`);
+                  if (soundEnabled) playAlertTone('success');
+                }}
+              />
+            )}
+          </>
         )}
       </main>
 
@@ -512,6 +433,7 @@ function SocInnerApp() {
 
       <InjectScenarioModal
         isOpen={showInjectScenarioModal}
+        scenarios={attackScenarios}
         onClose={() => setShowInjectScenarioModal(false)}
         onInject={handleInjectScenario}
       />
